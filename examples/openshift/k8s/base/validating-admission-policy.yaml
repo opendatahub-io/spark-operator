@@ -1,0 +1,19 @@
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicy
+metadata:
+  name: deny-fsgroup-in-sparkapplication
+spec:
+  failurePolicy: Fail
+  matchConstraints:
+    resourceRules:
+    - apiGroups: ["sparkoperator.k8s.io"]
+      apiVersions: ["v1beta2"]
+      operations: ["CREATE", "UPDATE"]
+      resources: ["sparkapplications"]
+  validations:
+    - expression: '!has(object.spec.driver.podSecurityContext) || !has(object.spec.driver.podSecurityContext.fsGroup)'
+      message: "fsGroup is not allowed in spec.driver.podSecurityContext. OpenShift will assign fsGroup automatically via SCC."
+      reason: Forbidden
+    - expression: '!has(object.spec.executor.podSecurityContext) || !has(object.spec.executor.podSecurityContext.fsGroup)'
+      message: "fsGroup is not allowed in spec.executor.podSecurityContext. OpenShift will assign fsGroup automatically via SCC."
+      reason: Forbidden

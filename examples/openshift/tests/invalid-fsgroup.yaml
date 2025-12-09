@@ -1,0 +1,25 @@
+apiVersion: "sparkoperator.k8s.io/v1beta2"
+kind: SparkApplication
+metadata:
+  name: test-invalid-fsgroup
+spec:
+  type: Python
+  mode: cluster
+  image: test:latest
+  mainApplicationFile: local:///app/test.py
+  sparkVersion: "3.5.0"
+  restartPolicy:
+    type: Never
+  driver:
+    cores: 1
+    memory: "1g"
+    # ❌ This should be rejected by the ValidatingAdmissionPolicy
+    podSecurityContext:
+      fsGroup: 185
+  executor:
+    cores: 1
+    instances: 1
+    memory: "1g"
+    # ❌ This should also be rejected
+    podSecurityContext:
+      fsGroup: 185

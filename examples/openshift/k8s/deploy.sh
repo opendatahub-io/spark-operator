@@ -35,9 +35,23 @@ echo ""
 echo "2. Creating RBAC (ServiceAccount, Role, RoleBinding)..."
 $CLI apply -f k8s/base/rbac.yaml
 
-# Step 3: Submit Spark Application
+# Step 3: Install ValidatingAdmissionPolicy (Requires cluster admin)
 echo ""
-echo "3. Submitting Spark Application..."
+echo "3. Installing ValidatingAdmissionPolicy (optional)..."
+if [ "$CLI" == "oc" ]; then
+    if oc auth can-i create validatingadmissionpolicies --all-namespaces &> /dev/null; then
+        echo "   Installing policy to prevent fsGroup in SparkApplications..."
+        $CLI apply -f k8s/base/validating-admission-policy.yaml
+        $CLI apply -f k8s/base/validating-admission-policy-binding.yaml
+        echo "   ✅ Policy installed"
+    else
+        echo "   ⚠️  Skipping (requires cluster-admin). Install manually if needed."
+    fi
+fi
+
+# Step 4: Submit Spark Application
+echo ""
+echo "4. Submitting Spark Application..."
 # Use replace --force to ensure the job is restarted if it already exists
 $CLI replace --force -f k8s/docling-spark-app.yaml || $CLI create -f k8s/docling-spark-app.yaml
 
