@@ -104,16 +104,21 @@ You should see:
 
 2. Confirm Security Context Constraint (SCC)
 Use the describe command to confirm that the restricted-v2 policy is assigned to the pods.
-```oc describe pod <POD_NAME> -n kubeflow-spark-operator
+
+```bash
+oc describe pod <POD_NAME> -n kubeflow-spark-operator
 ```
 Look for the following line in the Annotations section:
-```Annotations: 
+```bash
+Annotations:
   openshift.io/scc: restricted-v2
 ```
 
 3. Verify Arbitrary UID Injection (Acceptance Criteria)
 To definitively prove that the container is running with a random non-root UID and is a member of the required Group 0, execute the id command inside the container. This confirms the environment is ready for the compatible Spark image.
-```oc exec -n kubeflow-spark-operator <POD_NAME> -- id
+
+```bash
+oc exec -n kubeflow-spark-operator <POD_NAME> -- id
 ```
 
 ## 3. SparkApplication CRD
@@ -166,6 +171,21 @@ spec:
 
 > **Note:** See `k8s/docling-spark-app.yaml` for the complete configuration including `timeToLiveSeconds` and labels.
 > **Note:** To ensure compatibility with OpenShift's default restricted-v2 Security Context Constraint (SCC), the explicit securityContext block (including runAsNonRoot, fsGroup, etc.) has been removed from both the driver and executor specifications in k8s/docling-spark-app.yaml.
+
+### Admission Control Policy
+
+To prevent users from setting `fsGroup` in SparkApplication specs, install a ValidatingAdmissionPolicy:
+
+```bash
+# As cluster admin
+oc apply -f examples/openshift/k8s/base/validating-admission-policy.yaml
+oc apply -f examples/openshift/k8s/base/validating-admission-policy-binding.yaml
+```
+
+**Disable the policy**: 
+```bash
+oc delete validatingadmissionpolicybinding deny-fsgroup-in-sparkapplication-binding
+```
 
 ## 4. About Docling-Spark Application
 
