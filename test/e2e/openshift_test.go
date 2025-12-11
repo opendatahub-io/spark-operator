@@ -18,6 +18,7 @@ package e2e_test
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
 	"time"
@@ -44,9 +45,11 @@ var _ = Describe("OpenShift Integration Tests", func() {
 
 		var (
 			testNamespace      *corev1.Namespace
+			testNamespaceName  string
 			serviceAccount     *corev1.ServiceAccount
 			clusterRole        *rbacv1.ClusterRole
 			clusterRoleBinding *rbacv1.ClusterRoleBinding
+			uniqueSuffix       string
 		)
 
 		BeforeEach(func() {
@@ -55,10 +58,14 @@ var _ = Describe("OpenShift Integration Tests", func() {
 				Skip("OpenShift example file not found - skipping OpenShift integration tests")
 			}
 
-			By("Creating the docling-spark namespace")
+			// Generate unique suffix to avoid collisions
+			uniqueSuffix = fmt.Sprintf("%d", time.Now().UnixNano())
+			testNamespaceName = fmt.Sprintf("docling-spark-%s", uniqueSuffix)
+
+			By(fmt.Sprintf("Creating unique namespace: %s", testNamespaceName))
 			testNamespace = &corev1.Namespace{
 				ObjectMeta: metav1.ObjectMeta{
-					Name: "docling-spark",
+					Name: testNamespaceName,
 					Labels: map[string]string{
 						"test": "openshift-integration",
 					},
@@ -71,7 +78,7 @@ var _ = Describe("OpenShift Integration Tests", func() {
 			serviceAccount = &corev1.ServiceAccount{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "spark-driver",
-					Namespace: "docling-spark",
+					Namespace: testNamespaceName,
 					Labels: map[string]string{
 						"test": "openshift-integration",
 					},
@@ -79,10 +86,10 @@ var _ = Describe("OpenShift Integration Tests", func() {
 			}
 			Expect(k8sClient.Create(ctx, serviceAccount)).To(Succeed())
 
-			// Create ClusterRole with necessary permissions
+			// Create ClusterRole with unique name
 			clusterRole = &rbacv1.ClusterRole{
 				ObjectMeta: metav1.ObjectMeta{
-					Name: "docling-spark-driver-role",
+					Name: fmt.Sprintf("docling-spark-driver-role-%s", uniqueSuffix),
 					Labels: map[string]string{
 						"test": "openshift-integration",
 					},
@@ -102,10 +109,10 @@ var _ = Describe("OpenShift Integration Tests", func() {
 			}
 			Expect(k8sClient.Create(ctx, clusterRole)).To(Succeed())
 
-			// Create ClusterRoleBinding
+			// Create ClusterRoleBinding with unique name
 			clusterRoleBinding = &rbacv1.ClusterRoleBinding{
 				ObjectMeta: metav1.ObjectMeta{
-					Name: "docling-spark-driver-binding",
+					Name: fmt.Sprintf("docling-spark-driver-binding-%s", uniqueSuffix),
 					Labels: map[string]string{
 						"test": "openshift-integration",
 					},
@@ -114,12 +121,12 @@ var _ = Describe("OpenShift Integration Tests", func() {
 					{
 						Kind:      "ServiceAccount",
 						Name:      "spark-driver",
-						Namespace: "docling-spark",
+						Namespace: testNamespaceName,
 					},
 				},
 				RoleRef: rbacv1.RoleRef{
 					Kind:     "ClusterRole",
-					Name:     "docling-spark-driver-role",
+					Name:     fmt.Sprintf("docling-spark-driver-role-%s", uniqueSuffix),
 					APIGroup: "rbac.authorization.k8s.io",
 				},
 			}
@@ -133,14 +140,17 @@ var _ = Describe("OpenShift Integration Tests", func() {
 			decoder := yaml.NewYAMLOrJSONDecoder(file, 100)
 			Expect(decoder.Decode(app)).NotTo(HaveOccurred())
 
-			By("Creating SparkApplication")
+			// Override the namespace to use our unique one
+			app.Namespace = testNamespaceName
+
+			By(fmt.Sprintf("Creating SparkApplication in namespace: %s", testNamespaceName))
 			Expect(k8sClient.Create(ctx, app)).To(Succeed())
 		})
 
 		AfterEach(func() {
 			By("Cleaning up SparkApplication")
 			if app != nil {
-				key := types.NamespacedName{Namespace: app.Namespace, Name: app.Name}
+				key := types.NamespacedName{Namespace: testNamespaceName, Name: app.Name}
 				currentApp := &v1beta2.SparkApplication{}
 				if err := k8sClient.Get(ctx, key, currentApp); err == nil {
 					Expect(k8sClient.Delete(ctx, currentApp)).To(Succeed())
@@ -217,7 +227,7 @@ var _ = Describe("OpenShift Integration Tests", func() {
 
 		It("Should successfully submit and create pods with OpenShift security constraints", func() {
 			By("Waiting for SparkApplication to be submitted by the operator")
-			key := types.NamespacedName{Namespace: app.Namespace, Name: app.Name}
+			key := types.NamespacedName{Namespace: testNamespaceName, Name: app.Name}
 
 			Eventually(func() v1beta2.ApplicationStateType {
 				currentApp := &v1beta2.SparkApplication{}
@@ -233,7 +243,7 @@ var _ = Describe("OpenShift Integration Tests", func() {
 			Eventually(func() bool {
 				pods := &corev1.PodList{}
 				listOpts := []client.ListOption{
-					client.InNamespace("docling-spark"),
+					client.InNamespace(testNamespaceName),
 					client.MatchingLabels{"spark-role": "driver"},
 				}
 
@@ -256,7 +266,7 @@ var _ = Describe("OpenShift Integration Tests", func() {
 			Eventually(func() int {
 				pods := &corev1.PodList{}
 				listOpts := []client.ListOption{
-					client.InNamespace("docling-spark"),
+					client.InNamespace(testNamespaceName),
 					client.MatchingLabels{"spark-role": "executor"},
 				}
 
