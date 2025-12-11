@@ -141,10 +141,10 @@ var _ = Describe("OpenShift Integration Tests", func() {
 			Expect(decoder.Decode(app)).NotTo(HaveOccurred())
 
 			// Clear metadata fields that shouldn't be set on object creation
-			app.ObjectMeta.ResourceVersion = ""
-			app.ObjectMeta.UID = ""
-			app.ObjectMeta.CreationTimestamp = metav1.Time{}
-			app.ObjectMeta.Generation = 0
+			app.ResourceVersion = ""
+			app.UID = ""
+			app.CreationTimestamp = metav1.Time{}
+			app.Generation = 0
 			// Override the namespace to use our unique one
 			app.Namespace = testNamespaceName
 
