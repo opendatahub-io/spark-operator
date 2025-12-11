@@ -44,12 +44,13 @@ var _ = Describe("OpenShift Integration Tests", func() {
 		app := &v1beta2.SparkApplication{}
 
 		var (
-			testNamespace      *corev1.Namespace
 			testNamespaceName  string
 			serviceAccount     *corev1.ServiceAccount
 			clusterRole        *rbacv1.ClusterRole
 			clusterRoleBinding *rbacv1.ClusterRoleBinding
 			uniqueSuffix       string
+			serviceAccountName string
+			appName            string
 		)
 
 		BeforeEach(func() {
@@ -60,24 +61,17 @@ var _ = Describe("OpenShift Integration Tests", func() {
 
 			// Generate unique suffix to avoid collisions
 			uniqueSuffix = fmt.Sprintf("%d", time.Now().UnixNano())
-			testNamespaceName = fmt.Sprintf("docling-spark-%s", uniqueSuffix)
+			testNamespaceName = "default" // Use default namespace (always exists and watched)
+			serviceAccountName = fmt.Sprintf("spark-driver-%s", uniqueSuffix)
+			appName = fmt.Sprintf("docling-spark-job-%s", uniqueSuffix)
 
-			By(fmt.Sprintf("Creating unique namespace: %s", testNamespaceName))
-			testNamespace = &corev1.Namespace{
-				ObjectMeta: metav1.ObjectMeta{
-					Name: testNamespaceName,
-					Labels: map[string]string{
-						"test": "openshift-integration",
-					},
-				},
-			}
-			Expect(k8sClient.Create(ctx, testNamespace)).To(Succeed())
+			By(fmt.Sprintf("Using default namespace with unique resources (suffix: %s)", uniqueSuffix))
 
 			By("Creating RBAC resources for OpenShift")
-			// Create ServiceAccount
+			// Create ServiceAccount with unique name
 			serviceAccount = &corev1.ServiceAccount{
 				ObjectMeta: metav1.ObjectMeta{
-					Name:      "spark-driver",
+					Name:      serviceAccountName,
 					Namespace: testNamespaceName,
 					Labels: map[string]string{
 						"test": "openshift-integration",
@@ -120,7 +114,7 @@ var _ = Describe("OpenShift Integration Tests", func() {
 				Subjects: []rbacv1.Subject{
 					{
 						Kind:      "ServiceAccount",
-						Name:      "spark-driver",
+						Name:      serviceAccountName,
 						Namespace: testNamespaceName,
 					},
 				},
@@ -145,17 +139,24 @@ var _ = Describe("OpenShift Integration Tests", func() {
 			app.UID = ""
 			app.CreationTimestamp = metav1.Time{}
 			app.Generation = 0
-			// Override the namespace to use our unique one
-			app.Namespace = testNamespaceName
+			app.SelfLink = ""
+			app.ManagedFields = nil
 
-			By(fmt.Sprintf("Creating SparkApplication in namespace: %s", testNamespaceName))
+			// Override namespace, name, and service account to use unique values
+			app.Namespace = testNamespaceName
+			app.Name = appName
+			if app.Spec.Driver.ServiceAccount != nil {
+				*app.Spec.Driver.ServiceAccount = serviceAccountName
+			}
+
+			By(fmt.Sprintf("Creating SparkApplication '%s' in namespace '%s'", appName, testNamespaceName))
 			Expect(k8sClient.Create(ctx, app)).To(Succeed())
 		})
 
 		AfterEach(func() {
 			By("Cleaning up SparkApplication")
 			if app != nil {
-				key := types.NamespacedName{Namespace: testNamespaceName, Name: app.Name}
+				key := types.NamespacedName{Namespace: testNamespaceName, Name: appName}
 				currentApp := &v1beta2.SparkApplication{}
 				if err := k8sClient.Get(ctx, key, currentApp); err == nil {
 					Expect(k8sClient.Delete(ctx, currentApp)).To(Succeed())
@@ -173,10 +174,7 @@ var _ = Describe("OpenShift Integration Tests", func() {
 				Expect(k8sClient.Delete(ctx, serviceAccount)).To(Succeed())
 			}
 
-			By("Cleaning up namespace")
-			if testNamespace != nil {
-				Expect(k8sClient.Delete(ctx, testNamespace)).To(Succeed())
-			}
+			// No namespace cleanup needed - using default namespace
 		})
 
 		It("Should validate OpenShift security context constraints compliance", func() {
@@ -218,7 +216,7 @@ var _ = Describe("OpenShift Integration Tests", func() {
 			By("Verifying OpenShift-specific resource configuration")
 			// Verify service account
 			Expect(app.Spec.Driver.ServiceAccount).NotTo(BeNil())
-			Expect(*app.Spec.Driver.ServiceAccount).To(Equal("spark-driver"))
+			Expect(*app.Spec.Driver.ServiceAccount).To(Equal(serviceAccountName))
 
 			// Verify resource limits suitable for OpenShift
 			Expect(*app.Spec.Driver.Cores).To(Equal(int32(1)))
@@ -232,7 +230,7 @@ var _ = Describe("OpenShift Integration Tests", func() {
 
 		It("Should successfully submit and create pods with OpenShift security constraints", func() {
 			By("Waiting for SparkApplication to be submitted by the operator")
-			key := types.NamespacedName{Namespace: testNamespaceName, Name: app.Name}
+			key := types.NamespacedName{Namespace: testNamespaceName, Name: appName}
 
 			Eventually(func() v1beta2.ApplicationStateType {
 				currentApp := &v1beta2.SparkApplication{}
