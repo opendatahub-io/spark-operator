@@ -139,7 +139,6 @@ var _ = Describe("OpenShift Integration Tests", func() {
 			app.UID = ""
 			app.CreationTimestamp = metav1.Time{}
 			app.Generation = 0
-			app.SelfLink = ""
 			app.ManagedFields = nil
 
 			// Override namespace, name, and service account to use unique values
