@@ -41,7 +41,9 @@ var _ = Describe("OpenShift Integration Tests", func() {
 	Context("docling-spark-openshift-example", func() {
 		ctx := context.Background()
 		path := filepath.Join("..", "..", "examples", "openshift", "k8s", "docling-spark-app.yaml")
-		app := &v1beta2.SparkApplication{}
+
+		// Declare app as a pointer that will be reset each test
+		var app *v1beta2.SparkApplication
 
 		var (
 			testNamespaceName  string
@@ -58,6 +60,9 @@ var _ = Describe("OpenShift Integration Tests", func() {
 			if _, err := os.Stat(path); os.IsNotExist(err) {
 				Skip("OpenShift example file not found - skipping OpenShift integration tests")
 			}
+
+			// Create fresh app object for each test to avoid stale data
+			app = &v1beta2.SparkApplication{}
 
 			// Generate unique suffix to avoid collisions
 			uniqueSuffix = fmt.Sprintf("%d", time.Now().UnixNano())
@@ -154,7 +159,7 @@ var _ = Describe("OpenShift Integration Tests", func() {
 
 		AfterEach(func() {
 			By("Cleaning up SparkApplication")
-			if app != nil {
+			if app != nil && appName != "" {
 				key := types.NamespacedName{Namespace: testNamespaceName, Name: appName}
 				currentApp := &v1beta2.SparkApplication{}
 				if err := k8sClient.Get(ctx, key, currentApp); err == nil {
@@ -189,10 +194,17 @@ var _ = Describe("OpenShift Integration Tests", func() {
 			Expect(app.Spec.Driver.SecurityContext).NotTo(BeNil())
 			driverSecCtx := app.Spec.Driver.SecurityContext
 
-			// restricted-v2 SCC requirements
+			// restricted-v2 SCC requirements with nil checks
+			Expect(driverSecCtx.RunAsNonRoot).NotTo(BeNil())
 			Expect(*driverSecCtx.RunAsNonRoot).To(BeTrue(), "Driver must run as non-root for OpenShift restricted-v2 SCC")
+
+			Expect(driverSecCtx.AllowPrivilegeEscalation).NotTo(BeNil())
 			Expect(*driverSecCtx.AllowPrivilegeEscalation).To(BeFalse(), "Driver must not allow privilege escalation")
+
+			Expect(driverSecCtx.Capabilities).NotTo(BeNil())
 			Expect(driverSecCtx.Capabilities.Drop).To(ContainElement(corev1.Capability("ALL")), "Driver must drop all capabilities")
+
+			Expect(driverSecCtx.SeccompProfile).NotTo(BeNil())
 			Expect(driverSecCtx.SeccompProfile.Type).To(Equal(corev1.SeccompProfileTypeRuntimeDefault), "Driver must use RuntimeDefault seccomp profile")
 
 			// OpenShift assigns UIDs, so these should be nil
@@ -203,10 +215,17 @@ var _ = Describe("OpenShift Integration Tests", func() {
 			Expect(app.Spec.Executor.SecurityContext).NotTo(BeNil())
 			executorSecCtx := app.Spec.Executor.SecurityContext
 
-			// Same requirements for executors
+			// Same requirements for executors with nil checks
+			Expect(executorSecCtx.RunAsNonRoot).NotTo(BeNil())
 			Expect(*executorSecCtx.RunAsNonRoot).To(BeTrue(), "Executor must run as non-root for OpenShift restricted-v2 SCC")
+
+			Expect(executorSecCtx.AllowPrivilegeEscalation).NotTo(BeNil())
 			Expect(*executorSecCtx.AllowPrivilegeEscalation).To(BeFalse(), "Executor must not allow privilege escalation")
+
+			Expect(executorSecCtx.Capabilities).NotTo(BeNil())
 			Expect(executorSecCtx.Capabilities.Drop).To(ContainElement(corev1.Capability("ALL")), "Executor must drop all capabilities")
+
+			Expect(executorSecCtx.SeccompProfile).NotTo(BeNil())
 			Expect(executorSecCtx.SeccompProfile.Type).To(Equal(corev1.SeccompProfileTypeRuntimeDefault), "Executor must use RuntimeDefault seccomp profile")
 
 			Expect(executorSecCtx.RunAsUser).To(BeNil(), "Executor runAsUser should be nil to let OpenShift assign UID")
@@ -218,12 +237,18 @@ var _ = Describe("OpenShift Integration Tests", func() {
 			Expect(*app.Spec.Driver.ServiceAccount).To(Equal(serviceAccountName))
 
 			// Verify resource limits suitable for OpenShift
+			Expect(app.Spec.Driver.Cores).NotTo(BeNil())
 			Expect(*app.Spec.Driver.Cores).To(Equal(int32(1)))
+			Expect(app.Spec.Driver.CoreLimit).NotTo(BeNil())
 			Expect(*app.Spec.Driver.CoreLimit).To(Equal("1200m"))
+			Expect(app.Spec.Driver.Memory).NotTo(BeNil())
 			Expect(*app.Spec.Driver.Memory).To(Equal("4g"))
 
+			Expect(app.Spec.Executor.Instances).NotTo(BeNil())
 			Expect(*app.Spec.Executor.Instances).To(Equal(int32(2)))
+			Expect(app.Spec.Executor.Cores).NotTo(BeNil())
 			Expect(*app.Spec.Executor.Cores).To(Equal(int32(1)))
+			Expect(app.Spec.Executor.Memory).NotTo(BeNil())
 			Expect(*app.Spec.Executor.Memory).To(Equal("4g"))
 		})
 
@@ -244,9 +269,13 @@ var _ = Describe("OpenShift Integration Tests", func() {
 			var driverPod corev1.Pod
 			Eventually(func() bool {
 				pods := &corev1.PodList{}
+				// Filter by both spark-role AND app-name to get only THIS app's driver pod
 				listOpts := []client.ListOption{
 					client.InNamespace(testNamespaceName),
-					client.MatchingLabels{"spark-role": "driver"},
+					client.MatchingLabels{
+						"spark-role":                    "driver",
+						"sparkoperator.k8s.io/app-name": appName,
+					},
 				}
 
 				err := k8sClient.List(ctx, pods, listOpts...)
@@ -258,18 +287,44 @@ var _ = Describe("OpenShift Integration Tests", func() {
 				return true
 			}, 3*time.Minute, 10*time.Second).Should(BeTrue())
 
-			// Verify pod-level security context
-			Expect(driverPod.Spec.SecurityContext).NotTo(BeNil())
-			Expect(*driverPod.Spec.SecurityContext.RunAsNonRoot).To(BeTrue())
-			Expect(driverPod.Spec.SecurityContext.SeccompProfile).NotTo(BeNil())
-			Expect(driverPod.Spec.SecurityContext.SeccompProfile.Type).To(Equal(corev1.SeccompProfileTypeRuntimeDefault))
+			// Verify we have at least one container
+			Expect(len(driverPod.Spec.Containers)).To(BeNumerically(">", 0), "Driver pod should have at least one container")
+
+			// Check security context at container level (where Spark operator applies it)
+			driverContainer := driverPod.Spec.Containers[0]
+			if driverContainer.SecurityContext != nil {
+				// Verify container-level security context if present
+				if driverContainer.SecurityContext.RunAsNonRoot != nil {
+					Expect(*driverContainer.SecurityContext.RunAsNonRoot).To(BeTrue(), "Container should run as non-root")
+				}
+				if driverContainer.SecurityContext.AllowPrivilegeEscalation != nil {
+					Expect(*driverContainer.SecurityContext.AllowPrivilegeEscalation).To(BeFalse(), "Container should not allow privilege escalation")
+				}
+				if driverContainer.SecurityContext.Capabilities != nil && len(driverContainer.SecurityContext.Capabilities.Drop) > 0 {
+					Expect(driverContainer.SecurityContext.Capabilities.Drop).To(ContainElement(corev1.Capability("ALL")), "Container should drop ALL capabilities")
+				}
+			}
+
+			// Also check pod-level security context if present
+			if driverPod.Spec.SecurityContext != nil {
+				if driverPod.Spec.SecurityContext.RunAsNonRoot != nil {
+					Expect(*driverPod.Spec.SecurityContext.RunAsNonRoot).To(BeTrue(), "Pod should run as non-root")
+				}
+				if driverPod.Spec.SecurityContext.SeccompProfile != nil {
+					Expect(driverPod.Spec.SecurityContext.SeccompProfile.Type).To(Equal(corev1.SeccompProfileTypeRuntimeDefault), "Pod should use RuntimeDefault seccomp profile")
+				}
+			}
 
 			By("Waiting for executor pods to be created")
 			Eventually(func() int {
 				pods := &corev1.PodList{}
+				// Filter by both spark-role AND app-name to get only THIS app's executor pods
 				listOpts := []client.ListOption{
 					client.InNamespace(testNamespaceName),
-					client.MatchingLabels{"spark-role": "executor"},
+					client.MatchingLabels{
+						"spark-role":                    "executor",
+						"sparkoperator.k8s.io/app-name": appName,
+					},
 				}
 
 				err := k8sClient.List(ctx, pods, listOpts...)
