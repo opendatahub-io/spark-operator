@@ -128,7 +128,7 @@ var _ = Describe("OpenShift Integration Tests", func() {
 			By("Parsing SparkApplication from OpenShift example")
 			file, err := os.Open(path)
 			Expect(err).NotTo(HaveOccurred())
-			defer file.Close()
+			defer func() { _ = file.Close() }()
 
 			decoder := yaml.NewYAMLOrJSONDecoder(file, 100)
 			Expect(decoder.Decode(app)).NotTo(HaveOccurred())
