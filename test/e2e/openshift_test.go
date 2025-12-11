@@ -1,4 +1,3 @@
-package e2e
 /*
 Copyright 2024 The Kubeflow authors.
 
