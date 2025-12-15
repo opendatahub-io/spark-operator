@@ -1,4 +1,4 @@
-name: Release Charts
+name: Release Spark Operator Charts
 
 on:
  workflow_dispatch:
