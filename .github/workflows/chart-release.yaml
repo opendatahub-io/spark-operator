@@ -1,9 +1,18 @@
 name: Release Charts
 
 on:
-  push:
+ workflow_dispatch:
+    inputs:
+      pr_or_branch:
+        description: "Pull request number or branch name"
+        required: true
+        default: "release"
+ pull_request:
     branches:
       - release*
+    paths:
+      - charts/spark-operator-chart/Chart.yaml
+      - charts/spark-operator-chart/values.yaml
 
 jobs:
   release:
