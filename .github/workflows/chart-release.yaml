@@ -13,6 +13,12 @@ on:
     paths:
       - charts/spark-operator-chart/Chart.yaml
       - charts/spark-operator-chart/values.yaml
+ push:
+    branches:
+      - release*
+    paths:
+      - charts/spark-operator-chart/Chart.yaml
+      - charts/spark-operator-chart/values.yaml
 
 jobs:
   release:
