@@ -1,15 +1,9 @@
 name: Release Spark Operator Charts
 
 on:
- pull_request:
-    branches:
-      - rhoai*
-    paths:
-      - charts/spark-operator-chart/Chart.yaml
-      - charts/spark-operator-chart/values.yaml
  push:
     branches:
-      - release*
+      - rhoai*
     paths:
       - charts/spark-operator-chart/Chart.yaml
       - charts/spark-operator-chart/values.yaml
