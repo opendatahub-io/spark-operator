@@ -413,7 +413,7 @@ spark:
   # If empty string is included, all namespaces will be allowed.
   # Make sure the namespaces have already existed.
   jobNamespaces:
-  - docling-spark #create explicit namespcace
+    - "" #should use all namespaces
 
   serviceAccount:
     # -- Specifies whether to create a service account for spark applications.
