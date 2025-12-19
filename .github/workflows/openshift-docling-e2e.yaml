@@ -6,15 +6,14 @@ on:
       # FUTURE USE:
       # Maintainers can provide a PR number or existing upstream branch name to run this
       # job against. If no PR number or branch name is provided, this job will run against
-      # content in the "main" branch instead.
+      # content in the "odh" branch instead.
       pr_or_branch:
         description: "Pull request number or branch name"
         required: true
-        default: "main"
+        default: "odh"
   push:
     branches:
-      - main
-      - ec2-github-runner-RHAIENG-2487
+      - odh
 
 env:
   INSTANCE_TYPE: "m5.xlarge"
