@@ -251,7 +251,7 @@ jobs:
       # ======================================================================
       - name: Pre-pull and load docling-spark image
         env:
-          DOCLING_IMAGE: quay.io/ssankepe/docling-spark:with-pdfs
+          DOCLING_IMAGE: quay.io/rishasin/docling-spark@sha256:0c5bbbe9a612db823d01711d739469c8cbddfad810d5034ddf275fde0006cb87
         run: |
           echo "Pulling docling-spark image (~9.5GB, this may take a while)..."
           docker pull $DOCLING_IMAGE
@@ -280,9 +280,49 @@ jobs:
           helm search repo opendatahub-spark-operator
 
       # ======================================================================
-      # Step 9: Run OpenShift E2E tests
+      # Step 9: Setup PVCs and upload test PDFs
+      # Creates namespace, PVCs, and uploads test PDF files before tests run
+      # ======================================================================
+      - name: Setup PVCs and upload test PDFs
+        run: |
+          echo "Setting up PVCs and uploading test data..."
+          
+          # Create namespace first (BeforeSuite will see it already exists - idempotent)
+          echo "Creating namespace..."
+          kubectl apply -f examples/openshift/k8s/base/namespace.yaml
+          kubectl get namespace docling-spark
+          
+          # Note: RBAC is applied by BeforeSuite in the Go tests, no need to do it here
+          
+          # Create input and output PVCs
+          # Transform production PVCs by removing storageClassName (gp3-csi is AWS/OpenShift only)
+          # This keeps k8s/*.yaml as single source of truth - no duplicate Kind-specific files
+          echo "Creating PVCs (using Kind's default StorageClass)..."
+          sed '/storageClassName:/d' examples/openshift/k8s/docling-input-pvc.yaml | kubectl apply -f -
+          sed '/storageClassName:/d' examples/openshift/k8s/docling-output-pvc.yaml | kubectl apply -f -
+          
+          # Note: Kind uses WaitForFirstConsumer, so PVCs won't bind until a Pod uses them
+          # The upload step below will trigger binding when it creates the helper pod
+          echo "PVCs created (will bind when first consumer pod is created):"
+          kubectl get pvc -n docling-spark
+          
+          echo "PVC status:"
+          kubectl get pvc -n docling-spark
+          
+          # Upload test PDFs using deploy.sh
+          echo "Uploading test PDFs from examples/openshift/tests/assets/..."
+          chmod +x examples/openshift/k8s/deploy.sh
+          cd examples/openshift && ./k8s/deploy.sh upload ./tests/assets/
+          
+          echo "✅ PVCs created and test PDFs uploaded successfully!"
+
+      # ======================================================================
+      # Step 10: Run OpenShift E2E tests
       # ======================================================================
       - name: Run OpenShift E2E tests
+        env:
+          # Skip namespace cleanup so we can download results after tests
+          SKIP_NAMESPACE_CLEANUP: "true"
         run: |
           echo "Running OpenShift E2E tests..."
           echo "These tests will:"
@@ -298,7 +338,62 @@ jobs:
             -timeout 30m
 
       # ======================================================================
-      # Step 10: Collect logs on failure
+      # Step 11: Download and show results
+      # ======================================================================
+      - name: Download and show results
+        if: success()
+        run: |
+          echo "Downloading results from output PVC..."
+          mkdir -p ./output
+          
+          cd examples/openshift
+          chmod +x k8s/deploy.sh
+          ./k8s/deploy.sh download ../../output/
+          
+          echo ""
+          echo "=== Results ==="
+          
+          if [ -s ../../output/results.jsonl ]; then
+            LINE_COUNT=$(wc -l < ../../output/results.jsonl)
+            echo "results.jsonl: $LINE_COUNT lines"
+            
+            echo ""
+            echo "=== Sample (first document) ==="
+            head -n 1 ../../output/results.jsonl | python3 -c "
+          import sys,json,re
+          d=json.load(sys.stdin)
+          print(f'Document: {d[\"document_path\"]}')
+          print(f'Success: {d[\"success\"]}')
+          content = d.get('content', '')
+          # Remove base64 images
+          content = re.sub(r'!\[Image\]\(data:image/[^)]+\)', '[IMAGE]', content)
+          print(f'Content length: {len(content)} chars')
+          print(f'Content preview (first 500 chars):\n{content[:500]}...')
+          "
+            echo ""
+            echo "✅ Download complete!"
+          else
+            echo "❌ ERROR: results.jsonl is empty or missing"
+            echo "Output directory contents:"
+            ls -la ../../output/ 2>/dev/null || echo "  Output directory does not exist"
+            exit 1
+          fi
+
+      # ======================================================================
+      # Step 12: Cleanup namespaces
+      # Since we skipped namespace cleanup in tests (SKIP_NAMESPACE_CLEANUP=true),
+      # we clean them up here after downloading results
+      # ======================================================================
+      - name: Cleanup namespaces
+        if: always()
+        run: |
+          echo "Cleaning up namespaces..."
+          kubectl delete namespace docling-spark --ignore-not-found --wait=false || true
+          kubectl delete namespace spark-operator-openshift --ignore-not-found --wait=false || true
+          echo "✅ Namespace cleanup initiated"
+
+      # ======================================================================
+      # Step 13: Collect logs on failure
       # ======================================================================
       - name: Collect logs on failure
         if: failure()
@@ -335,7 +430,7 @@ jobs:
           kubectl get events -A --sort-by='.lastTimestamp' | tail -50
 
       # ======================================================================
-      # Step 11: Cleanup Kind cluster
+      # Step 14: Cleanup Kind cluster
       # ======================================================================
       - name: Cleanup Kind cluster
         if: always()
