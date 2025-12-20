@@ -322,9 +322,10 @@ chmod +x k8s/deploy.sh
 ./k8s/deploy.sh upload ./path/to/your/pdfs/
 ```
 
-### Step 2: Run the Spark Job
 
+### Step 2: Run the Spark Job
 The deploy script automatically creates the namespace, RBAC, and PVCs before submitting the SparkApplication:
+
 
 ```bash
 ./k8s/deploy.sh
@@ -352,6 +353,7 @@ persistentvolumeclaim/docling-output created
    ⚠️  Skipping (requires cluster-admin). Install manually if needed.
 
 5. Submitting Spark Application...
+
 sparkapplication.sparkoperator.k8s.io/docling-spark-job created
 
 [OK] Deployment complete!
@@ -471,6 +473,7 @@ View results:
 ```bash
 cat ./output/results.jsonl
 ```
+
 
 ### Step 5: Access Spark UI (Optional)
 
