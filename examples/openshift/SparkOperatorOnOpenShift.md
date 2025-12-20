@@ -1,6 +1,6 @@
 # Kubeflow Spark Operator on Red Hat AI
 
-This documentation details how the Kubeflow Spark Operator works on Red Hat AI, its architecture, installation, and how to run a distributed Spark workload using the `docling-spark` application.
+This documentation details how the Kubeflow Spark Operator works on Red Hat AI, its architecture, installation, and how to run a distributed Spark workload using the `docling-spark` application with PVC-based storage.
 
 ## 1. Spark Operator Architecture
 
@@ -76,20 +76,43 @@ spark:
 
 > **Note:** The `spark.jobNamespaces` setting specifies which namespaces the operator watches for SparkApplications. If you leave the array empty (`jobNamespaces: []`), the operator will watch **all namespaces**. For better security isolation and control, always specify the namespaces where Spark jobs should run.
 
+> **Note:** We set `fsGroup: null` to let OpenShift's `restricted-v2` SCC assign the fsGroup automatically from the namespace's supplemental group range. The EBS CSI driver honors this and sets correct permissions on PVC mounts.
+
 ### 3. Install the Operator
 
+First, create the required namespaces:
+
 ```bash
-# Create the namespace
+# Namespace where the operator runs
 oc new-project kubeflow-spark-operator
 
-# Install via Helm
+# Namespace where Spark jobs will run (uses k8s/base/namespace.yaml for labels)
+oc apply -f k8s/base/namespace.yaml
+```
+
+> **Note:** We use the YAML manifest for `docling-spark` to apply consistent labels (`app: docling-spark`, `environment: production`) which are useful for filtering, policies, and production environments.
+
+**For a fresh installation:**
+
+```bash
 helm install spark-operator spark-operator/spark-operator \
     --namespace kubeflow-spark-operator \
     -f spark-operator-values.yaml \
     --version 2.2.1
 ```
 
-> **Version Note:** We use v2.2.1 which includes Spark 3.5.5. Newer versions (v2.3.x+) ship with Spark 4.x which may have breaking changes. See the [version matrix](https://github.com/kubeflow/spark-operator?tab=readme-ov-file#version-matrix) for details.
+**To update an existing installation** (e.g., to watch additional namespaces):
+
+```bash
+helm upgrade spark-operator spark-operator/spark-operator \
+    --namespace kubeflow-spark-operator \
+    -f spark-operator-values.yaml \
+    --version 2.2.1
+```
+
+> **Tip:** Use `helm upgrade --install` to handle both cases in one command — it will install if not present, or upgrade if already installed.
+
+> **Version Note:** We use v2.2.1 which supports Spark 3.5.x. Our application uses Spark 3.5.7 with Java 17 for Python 3.10 compatibility (required by docling). Newer versions (v2.3.x+) ship with Spark 4.x which may have breaking changes. See the [version matrix](https://github.com/kubeflow/spark-operator?tab=readme-ov-file#version-matrix) for details.
 
 ### 4. Verify Installation and Security Context
 After installation, verify the operator pods are running and, crucially, that the cluster is correctly enforcing the restricted-v2 security policy required for the custom image.
@@ -104,16 +127,18 @@ You should see:
 
 2. Confirm Security Context Constraint (SCC)
 Use the describe command to confirm that the restricted-v2 policy is assigned to the pods.
-```oc describe pod <POD_NAME> -n kubeflow-spark-operator
+```bash
+oc describe pod <POD_NAME> -n kubeflow-spark-operator
 ```
 Look for the following line in the Annotations section:
 ```Annotations: 
-  openshift.io/scc: restricted-v2
+openshift.io/scc: restricted-v2
 ```
 
 3. Verify Arbitrary UID Injection (Acceptance Criteria)
 To definitively prove that the container is running with a random non-root UID and is a member of the required Group 0, execute the id command inside the container. This confirms the environment is ready for the compatible Spark image.
-```oc exec -n kubeflow-spark-operator <POD_NAME> -- id
+```bash
+oc exec -n kubeflow-spark-operator <POD_NAME> -- id
 ```
 
 ## 3. SparkApplication CRD
@@ -129,6 +154,9 @@ Key fields in the `SparkApplication` spec include:
 *   **`sparkVersion`**: The version of Spark to use (must match the image).
 *   **`restartPolicy`**: Handling of failures (`Never`, `OnFailure`, `Always`).
 *   **`driver` / `executor`**: Resource requests (cores, memory), labels, service accounts, and **security contexts**.
+*   **`volumes` / `volumeMounts`**: PVCs for input and output data.
+
+> **Security Note:** The SparkApplication does NOT set `fsGroup`, `runAsUser`, or `runAsGroup`. OpenShift's `restricted-v2` SCC assigns these automatically, and the CSI driver honors them.
 
 Example snippet from `k8s/docling-spark-app.yaml`:
 
@@ -140,8 +168,9 @@ metadata:
   namespace: docling-spark
 spec:
   type: Python
+  pythonVersion: "3"
   mode: cluster
-  image: quay.io/ssankepe/docling-spark:with-pdfs
+  image: quay.io/rishasin/docling-spark:latest
   imagePullPolicy: Always
   mainApplicationFile: local:///app/scripts/run_spark_job.py
   arguments:
@@ -149,7 +178,7 @@ spec:
     - "/app/assets"
     - "--output-file"
     - "/app/output/results.jsonl"
-  sparkVersion: "3.5.0"
+  sparkVersion: "3.5.7"
   restartPolicy:
     type: Never
   driver:
@@ -173,131 +202,315 @@ The `docling-spark` application demonstrates a production-grade pattern for proc
 *   **Docling**: For advanced document layout analysis and understanding.
 *   **Apache Spark**: For distributed processing across the cluster.
 *   **Kubeflow Spark Operator**: For native Kubernetes lifecycle management.
+*   **PVC-based Storage**: Input and output data stored on persistent volumes.
 
-### How Docling-Spark Application Works
-1.  **Spark Operator** (running on OpenShift) launches a Driver Pod.
-2.  **Driver** distributes Docling code to Executor Pods.
-3.  **Executors** process PDFs in parallel (OCR, Layout Analysis, Table Extraction).
-4.  **Driver** collects results into a single `results.jsonl` file.
-5.  Retrieve the results with a single command.
+### How It Works
+1.  Upload PDFs to the **input PVC**.
+2.  **Spark Operator** launches a Driver Pod.
+3.  **Driver** reads files from input PVC, distributes work to Executor Pods.
+4.  **Executors** process PDFs in parallel (OCR, Layout Analysis, Table Extraction).
+5.  **Driver** collects results and writes to **output PVC**.
+6.  Download results from output PVC anytime.
 
-## 5. Deploying the Docling-Spark Application
-
-### 1. Choose Your Deployment Path
+## 5. Choose Your Deployment Path
 
 You have two options depending on your use case:
 
-#### **Option A: Use Pre-Built Image (Recommended for Quick Start)**
-The repository is pre-configured to use `quay.io/ssankepe/docling-spark:with-pdfs`, which contains sample PDFs from the `assets/` directory. This allows you to **skip the build step entirely** and deploy immediately.
+| Option | Best For | Build Required |
+|--------|----------|----------------|
+| **A: Use Pre-Built Image** | Quick start, testing | No |
+| **B: Build Your Own Image** | Custom dependencies, full control | Yes |
 
-Proceed directly to Step 2 (Deploy to Red Hat AI).
+Both options use **PVC-based storage** for input and output data.
+
+---
+#### **Image Compatibility Rationale (Arbitrary UID)**
+
+> The `Dockerfile` has been modified to ensure the container image is compatible with OpenShift security model, which enforces running containers with a random, non-root User ID (UID).
+>
+> **Key Changes:**
+> - All directories are owned by **Group ID 0 (root)** and made **group-writable** (`chmod -R g=u`)
+> - This allows the arbitrary non-root UID (who is a member of Group 0) to read/write all necessary paths
+> - `ENV HOME=/home/spark` is set for Spark temp files
+> - **No hardcoded UID** - we removed `USER 185` and `useradd` commands
+> - **No `USER` directive at the end** - OpenShift assigns the arbitrary UID at runtime
+
+```dockerfile
+# Set Spark directories to be owned by group 0 and group-writable
+RUN chgrp -R 0 /opt/spark && \
+    chmod -R g=u /opt/spark && \
+    mkdir -p /opt/spark/work-dir /opt/spark/logs && \
+    chgrp -R 0 /opt/spark/work-dir /opt/spark/logs && \
+    chmod -R 775 /opt/spark/work-dir /opt/spark/logs
+
+# Ensure /tmp is writable
+RUN chmod 1777 /tmp
+
+# Set HOME for Spark temp files
+ENV HOME=/home/spark
+
+# Create directories for PVC mounts with GID 0 ownership
+RUN mkdir -p /app/assets /app/output /app/scripts /home/spark && \
+    chgrp -R 0 /app /home/spark && \
+    chmod -R g=u /app /home/spark && \
+    chmod -R 775 /app/output /home/spark
+```
+
+### Option A: Use Pre-Built Image (Recommended for Quick Start)
+
+Use the pre-built image `quay.io/rishasin/docling-spark:latest` which contains the Docling + PySpark application. Skip the build step and proceed directly to Section 6 for deployment.
+
+The manifest `k8s/docling-spark-app.yaml` is already configured to use this image.
+
+### Option B: Build Your Own Image
+
+Build your own image if you need custom dependencies or want to use your own container registry.
+
+#### Step 1: Build and Push Your Image
+
+```bash
+cd examples/openshift
+
+# Build the image for Red Hat AI (Linux AMD64)
+docker buildx build --platform linux/amd64 \
+  -t quay.io/YOUR_USERNAME/docling-spark:latest \
+  --push .
+```
+
+> **Note:** The `--platform linux/amd64` flag ensures the image runs on ROSA nodes, even if you're building on Apple Silicon (M1/M2/M3 Mac).
+
+#### Step 2: Update the Manifest
+
+Edit `k8s/docling-spark-app.yaml` to use your image:
+
+```yaml
+image: quay.io/YOUR_USERNAME/docling-spark:latest # ← Update this line
+```
+
+#### Step 3: Deploy
+
+Follow Section 6 for the complete deployment steps.
 
 ---
 
-#### **Option B: Build Your Own Image (For Custom PDFs)**
+## 6. Deploying the Docling-Spark Application to Red Hat AI
 
-**Best for:** Processing your own documents, customizing the application, or production deployments.
+### Step 1: Verify Namespace and Create RBAC
 
-**Why you need this:** The `assets/` directory is copied into the Docker image at build time (see `Dockerfile` line 47). To process different PDFs, you must rebuild the image with your files.
-
-#### **Image Compatibility Rationale (Arbitrary UID)**
-
-> The `Dockerfile` has been modified to ensure the container image is compatible with OpenShift/ROSA's security model, which enforces running containers with a random, non-root User ID (UID).
->
-> The critical change involves setting the ownership group for key directories like `/opt/spark` and `/app` to **Group ID 0 (root)** and making them **group-writable** (`chmod -R g=u`). This allows the arbitrary non-root user (who is a member of Group 0) to read and write to all necessary Spark and application paths, satisfying the `restricted-v2` SCC.
->
-> **Crucially, the fixed user creation (`USER 185`) and `ENV HOME=/home/spark` have been removed.**
-
-```RUN chgrp -R 0 /opt/spark \
-    && chmod -R g=u /opt/spark \
-    && mkdir -p /opt/spark/work-dir /opt/spark/logs /tmp \
-    && chgrp -R 0 /opt/spark/work-dir /opt/spark/logs /tmp \
-    && chmod -R g=u /opt/spark/work-dir /opt/spark/logs /tmp \
-    && mkdir -p /app/input /app/output \
-    && chgrp -R 0 /app \
-    && chmod -R g=u /app
-```
-
-**Steps:**
-
-1. **Create the assets directory and add your PDFs:**
-   ```bash
-   mkdir -p assets
-   cp /path/to/your/pdfs/*.pdf assets/
-   ```
-
-2. **Build the image for ROSA (Linux AMD64):**
-   ```bash
-   docker buildx build --platform linux/amd64 \
-     -t quay.io/YOUR_USERNAME/docling-spark:latest \
-     --push .
-   ```
-   
-   > **Note:** The `--platform linux/amd64` flag ensures the image runs on ROSA nodes, even if you're building on Apple Silicon (M1/M2/M3 Mac).
-
-3. **Update the Kubernetes manifest:**
-   
-   Edit `k8s/docling-spark-app.yaml` and change the image reference:
-   ```yaml
-   image: quay.io/YOUR_USERNAME/docling-spark:latest  # ← Update this line
-   ```
-
-4. **Proceed to Step 2** (Deploy to Red Hat AI).
-
-### 2. Deploy to Red Hat AI
-This script handles Namespace, RBAC, and Job Submission.
+The `docling-spark` namespace was created during operator installation (Section 2.3). Now switch to it and apply the RBAC resources:
 
 ```bash
+# Switch to the docling-spark namespace
+oc project docling-spark
+
+# Apply RBAC (ServiceAccount, Role, RoleBinding)
+oc apply -f k8s/base/rbac.yaml
+```
+
+Expected output:
+```
+Now using project "docling-spark" on server "https://api.your-cluster.openshiftapps.com:443".
+serviceaccount/spark-driver created
+role.rbac.authorization.k8s.io/spark-role created
+rolebinding.rbac.authorization.k8s.io/spark-role-binding created
+```
+
+> **Note:** These RBAC resources only need to be created once. On subsequent runs, you'll see `unchanged` instead of `created`.
+
+### Step 2: Create the PVCs
+
+```bash
+oc apply -f k8s/docling-input-pvc.yaml
+oc apply -f k8s/docling-output-pvc.yaml
+```
+
+Verify PVCs are created and bound:
+```bash
+oc get pvc -n docling-spark
+```
+
+Expected output:
+```
+NAME             STATUS   VOLUME       CAPACITY   ACCESS MODES   STORAGECLASS   AGE
+docling-input    Bound    pvc-xxx...   10Gi       RWO            gp3-csi        1m
+docling-output   Bound    pvc-yyy...   10Gi       RWO            gp3-csi        1m
+```
+
+> **Note:** PVCs only need to be created once. They persist across job runs, so you can reuse them for multiple jobs.
+
+### Step 3: Upload Your PDFs
+
+```bash
+# Make the script executable (first time only)
 chmod +x k8s/deploy.sh
+
+# Upload your PDF files to the input PVC
+./k8s/deploy.sh upload ./path/to/your/pdfs/
+```
+
+### Step 4: Run the Spark Job
+
+```bash
 ./k8s/deploy.sh
 ```
 
-### 3. Verify Execution
+Expected output:
+```
+==============================================
+  Deploying Docling + PySpark
+==============================================
+
+[INFO] 1. Ensuring namespace exists...
+Already on project "docling-spark" on server "https://api.your-cluster.openshiftapps.com:443".
+
+[INFO] 2. Creating RBAC (ServiceAccount, Role, RoleBinding)...
+serviceaccount/spark-driver unchanged
+role.rbac.authorization.k8s.io/spark-role unchanged
+rolebinding.rbac.authorization.k8s.io/spark-role-binding unchanged
+
+[INFO] 3. Submitting Spark Application...
+sparkapplication.sparkoperator.k8s.io/docling-spark-job created
+
+[OK] Deployment complete!
+
+📊 Check status:
+   oc get sparkapplications -n docling-spark
+   oc get pods -n docling-spark -w
+
+📝 View logs:
+   oc logs -f docling-spark-job-driver -n docling-spark
+
+🌐 Access Spark UI (when driver is running):
+   oc port-forward -n docling-spark svc/docling-spark-job-ui-svc 4040:4040
+   Open: http://localhost:4040
+```
+
+### Step 5: Monitor the Job
+
 ```bash
-oc get sparkapplications -n docling-spark
+# Watch pods
 oc get pods -n docling-spark -w
 ```
 
-You should see:
-- `docling-spark-job-driver` (Running)
-- `docling-spark-job-exec-1` (Running)
-- `docling-spark-job-exec-2` (Running)
+Expected output (pods lifecycle):
+```
+NAME                                        READY   STATUS              AGE
+docling-spark-job-driver                    0/1     Pending             0s
+docling-spark-job-driver                    0/1     ContainerCreating   0s
+docling-spark-job-driver                    1/1     Running             2s
+doclingsparkjob-xxx-exec-1                  0/1     Pending             0s
+doclingsparkjob-xxx-exec-1                  0/1     ContainerCreating   0s
+doclingsparkjob-xxx-exec-1                  1/1     Running             3s
+doclingsparkjob-xxx-exec-2                  1/1     Running             3s
+...
+doclingsparkjob-xxx-exec-1                  0/1     Completed           83s
+doclingsparkjob-xxx-exec-2                  0/1     Completed           83s
+docling-spark-job-driver                    0/1     Completed           100s
+```
 
-### 4. View Logs and Retrieve Results
+View application logs:
 ```bash
 oc logs -f docling-spark-job-driver -n docling-spark
 ```
 
-Wait for the job to finish (check logs). As soon as you see this in your terminal:
+Expected output:
 ```
+======================================================================
+📄 ENHANCED PDF PROCESSING WITH PYSPARK + DOCLING
+======================================================================
+Creating Spark session...
+Spark session created with 2 workers
+
+📂 Step 1: Getting list of PDF files...
+   Looking for PDFs in: /app/assets
+✅ Found PDF: document1.pdf
+✅ Found PDF: document2.pdf
+   Found 2 files to process
+
+🔄 Step 3: Processing files (this is where the magic happens!)...
+   Spark is now distributing work to workers...
+
+📊 Step 4: Organizing results...
+
+✅ Step 5: Results are ready! (Count: 2)
+
+💾 Step 6: Saving results to JSONL file...
+✅ Results saved to: /app/output/results.jsonl
+
 🎉 ALL DONE!
 ✅ Enhanced processing complete!
-😴 Sleeping for 60 minutes to allow file download...
-   Run: oc cp docling-spark-job-driver:/app/output/results.jsonl ./output/results.jsonl -n docling-spark
+📦 Results are stored on the output PVC.
+   To download: ./k8s/deploy.sh download ./output/
 ```
-Open another terminal and run the below command to save the results.
 
+### Step 6: Download the Results
+
+First, delete the SparkApplication to release the output PVC:
 ```bash
-# Copy results to your local machine
-oc cp docling-spark-job-driver:/app/output/results.jsonl ./output/results.jsonl -n docling-spark
-
-# View them
-head -n 5 output/results.jsonl
+oc delete sparkapplication docling-spark-job -n docling-spark
 ```
 
-### 5. Access Spark UI (Optional)
+Expected output:
+```
+sparkapplication.sparkoperator.k8s.io "docling-spark-job" deleted
+```
+
+Download results from the output PVC:
+```bash
+./k8s/deploy.sh download ./output/
+```
+
+Expected output:
+```
+==============================================
+  Downloading results from Output PVC
+==============================================
+
+[INFO] Creating helper pod 'pvc-downloader'...
+pod/pvc-downloader created
+[INFO] Waiting for pod to be ready...
+pod/pvc-downloader condition met
+[OK] Helper pod ready
+[INFO] Files on output PVC:
+-rw-rw-r--. 1 1000840000 1000840000 2140488 Dec 15 03:55 results.jsonl
+[INFO] Copying files to './output/'...
+
+[INFO] Downloaded files:
+-rw-r--r--  1 user  staff  2140488 Dec 15 03:55 results.jsonl
+[OK] Download complete!
+[INFO] Deleting helper pod 'pvc-downloader'...
+pod "pvc-downloader" deleted
+```
+
+View results:
+```bash
+cat ./output/results.jsonl
+```
+
+### Step 7: Access Spark UI (Optional)
+
 While the driver is running:
 ```bash
 oc port-forward -n docling-spark svc/docling-spark-job-ui-svc 4040:4040
 # Open: http://localhost:4040
 ```
 
-### 6. Cleanup
-```bash
-oc delete sparkapplication docling-spark-job -n docling-spark
-```
+## 7. Quick Reference
 
-## 6. Debugging and Logging
+| Action | Command |
+|--------|---------|
+| Setup RBAC | `oc project docling-spark && oc apply -f k8s/base/rbac.yaml` |
+| Create PVCs | `oc apply -f k8s/docling-input-pvc.yaml -f k8s/docling-output-pvc.yaml` |
+| Upload PDFs | `./k8s/deploy.sh upload ./my-pdfs/` |
+| Run job | `./k8s/deploy.sh` |
+| Check status | `./k8s/deploy.sh status` |
+| View logs | `oc logs -f docling-spark-job-driver -n docling-spark` |
+| Delete job | `oc delete sparkapplication docling-spark-job -n docling-spark` |
+| Download results | `./k8s/deploy.sh download ./output/` |
+| Cleanup helpers | `./k8s/deploy.sh cleanup` |
+| Build custom image | `docker buildx build --platform linux/amd64 -t quay.io/YOU/docling-spark:latest --push .` |
+
+## 8. Debugging and Logging
 
 ### Operator Logs
 If your Spark jobs are not starting (e.g., no pods created), check the operator logs:
@@ -321,18 +534,38 @@ Inspect the status of the CRD to see if the operator encountered validation erro
 oc describe sparkapplication docling-spark-job -n docling-spark
 ```
 
-## 7. Component Overview
+### CSI Driver Check
+Verify the CSI driver supports fsGroup:
+```bash
+oc get csidriver ebs.csi.aws.com -o yaml | grep fsGroupPolicy
+# Expected: fsGroupPolicy: File
+```
+
+## 9. Component Overview
 
 | Path | Description |
 |------|-------------|
 | `scripts/run_spark_job.py` | PySpark driver script |
 | `scripts/docling_module/` | PDF processing logic |
 | `k8s/docling-spark-app.yaml` | SparkApplication manifest |
-| `k8s/deploy.sh` | Deployment automation script |
-| `assets/` | Input PDFs directory |
+| `k8s/docling-input-pvc.yaml` | PVC for input data |
+| `k8s/docling-output-pvc.yaml` | PVC for output data |
+| `k8s/deploy.sh` | Deployment script (deploy, upload, download) |
 | `Dockerfile` | Container image definition |
-| `requirements.txt` | Local development dependencies |
 | `requirements-docker.txt` | Docker container dependencies |
+
+## 10. Cleanup
+
+```bash
+# Delete the SparkApplication
+oc delete sparkapplication docling-spark-job -n docling-spark
+
+# Delete PVCs (WARNING: This deletes all data!)
+oc delete pvc docling-input docling-output -n docling-spark
+
+# Delete the namespace (optional)
+oc delete project docling-spark
+```
 
 ### References
 *   [Red Hat Developer: Raw Data to Model Serving](https://developers.redhat.com/articles/2025/07/29/raw-data-model-serving-openshift-ai)

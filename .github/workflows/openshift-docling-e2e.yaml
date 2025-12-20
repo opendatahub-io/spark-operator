@@ -251,7 +251,7 @@ jobs:
       # ======================================================================
       - name: Pre-pull and load docling-spark image
         env:
-          DOCLING_IMAGE: quay.io/ssankepe/docling-spark:with-pdfs
+          DOCLING_IMAGE: quay.io/rishasin/docling-spark:latest
         run: |
           echo "Pulling docling-spark image (~9.5GB, this may take a while)..."
           docker pull $DOCLING_IMAGE
