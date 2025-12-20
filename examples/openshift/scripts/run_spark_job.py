@@ -293,16 +293,8 @@ def main():
         print(f"✅ Results saved to: {output_path}")
         print("\n🎉 ALL DONE!")
         print("✅ Enhanced processing complete!")
-        # Skip sleep if SKIP_SLEEP env var is set (useful for CI/testing)
-        import os
-        if os.environ.get("SKIP_SLEEP") == "true":
-            print("⏭️  Skipping sleep (SKIP_SLEEP=true)")
-        else:       
-            # Sleep for 60 minutes to allow file download from driver pod to local machine (for MVP)
-            import time
-            print("😴 Sleeping for 60 minutes to allow file download...")
-            print("   Run: oc cp docling-spark-job-driver:/app/output/results.jsonl ./output/results.jsonl -n docling-spark")
-            time.sleep(3600)  # Sleep for 3600 seconds (60 minutes)
+        print("\n📦 Results are stored on the output PVC.")
+        print("   To download: ./k8s/deploy.sh download ./output/")
 
         spark.stop()
         

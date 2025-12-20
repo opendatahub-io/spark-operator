@@ -1,0 +1,16 @@
+# PersistentVolumeClaim for Spark output data (results)
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: docling-output
+  namespace: docling-spark
+  labels:
+    app: docling-spark
+    purpose: spark-output
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 10Gi
+  storageClassName: gp3-csi

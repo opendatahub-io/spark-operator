@@ -195,18 +195,26 @@ var _ = BeforeSuite(func() {
 var _ = AfterSuite(func() {
 	By("Tearing down OpenShift test environment")
 
+	// Check if we should skip namespace cleanup (to allow downloading results)
+	skipNamespaceCleanup := os.Getenv("SKIP_NAMESPACE_CLEANUP") == "true"
+	if skipNamespaceCleanup {
+		logf.Log.Info("SKIP_NAMESPACE_CLEANUP=true: Skipping namespace cleanup to allow result download")
+	}
+
 	// Uninstall Helm release
 	By("Uninstalling Spark operator Helm release")
 	uninstallChart()
 
-	// Delete namespaces
-	By("Deleting docling namespace")
-	doclingNs := &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: DoclingNamespace}}
-	_ = k8sClient.Delete(context.TODO(), doclingNs)
+	// Delete namespaces (unless skipped)
+	if !skipNamespaceCleanup {
+		By("Deleting docling namespace")
+		doclingNs := &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: DoclingNamespace}}
+		_ = k8sClient.Delete(context.TODO(), doclingNs)
 
-	By("Deleting release namespace")
-	releaseNs := &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: ReleaseNamespace}}
-	_ = k8sClient.Delete(context.TODO(), releaseNs)
+		By("Deleting release namespace")
+		releaseNs := &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: ReleaseNamespace}}
+		_ = k8sClient.Delete(context.TODO(), releaseNs)
+	}
 
 	// Stop test environment
 	By("Stopping test environment")
