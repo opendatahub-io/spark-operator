@@ -200,7 +200,11 @@ jobs:
           K8S_VERSION: ${{ inputs.k8s_version || 'v1.30.8' }}
         run: |
           echo "Creating Kind cluster with Kubernetes ${K8S_VERSION}..."
-          make kind-create-cluster KIND_K8S_VERSION=${K8S_VERSION}
+          kind create cluster \
+            --name spark-operator \
+            --config charts/spark-operator-chart/ci/kind-config.yaml \
+            --image kindest/node:${K8S_VERSION} \
+            --wait=1m
 
       # ======================================================================
       # Step 6: Verify cluster is ready
@@ -286,7 +290,7 @@ jobs:
         if: always()
         run: |
           echo "Cleaning up Kind cluster..."
-          make kind-delete-cluster || true
+          kind delete cluster --name spark-operator || true
 
   # ============================================================================
   # Job 3: Stop EC2 Runner
