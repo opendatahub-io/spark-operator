@@ -126,6 +126,7 @@ jobs:
       K8S_VERSION: ${{ inputs.k8s_version || 'v1.30.8' }}
       GOPATH: ${{ github.workspace }}/go
       GOMODCACHE: ${{ github.workspace }}/go/pkg/mod
+      GOCACHE: ${{ github.workspace }}/go/cache
 
     steps:
       - name: Setup Environment
@@ -153,7 +154,7 @@ jobs:
 
       - name: Setup Go environment
         run: |
-          mkdir -p $GOPATH/bin $GOMODCACHE
+          mkdir -p $GOPATH/bin $GOMODCACHE $GOCACHE
           echo "$GOPATH/bin" >> $GITHUB_PATH
           go version
           go env
