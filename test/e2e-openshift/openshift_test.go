@@ -137,7 +137,7 @@ var _ = Describe("OpenShift Spark Operator", func() {
 			file, err := os.Open(path)
 			Expect(err).NotTo(HaveOccurred(), "Failed to open %s", path)
 			Expect(file).NotTo(BeNil())
-			defer file.Close()
+			defer func() { _ = file.Close() }()
 
 			decoder := yaml.NewYAMLOrJSONDecoder(file, 100)
 			Expect(decoder).NotTo(BeNil())

@@ -271,7 +271,7 @@ func installChartFromRepo() {
 	// Chart reference: repoName/chartName
 	chartRef := fmt.Sprintf("%s/%s", HelmRepoName, ChartName)
 
-	chartPath, err := installClient.ChartPathOptions.LocateChart(chartRef, settings)
+	chartPath, err := installClient.LocateChart(chartRef, settings)
 	Expect(err).NotTo(HaveOccurred(), "Failed to locate chart: %s", chartRef)
 
 	chart, err := loader.Load(chartPath)
