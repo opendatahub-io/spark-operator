@@ -277,8 +277,12 @@ func installChartFromRepo() {
 	chart, err := loader.Load(chartPath)
 	Expect(err).NotTo(HaveOccurred(), "Failed to load chart from: %s", chartPath)
 
-	// Install with default values
-	vals := map[string]interface{}{}
+	// Install with custom values - watch docling-spark namespace
+	vals := map[string]interface{}{
+		"spark": map[string]interface{}{
+			"namespaces": []string{"default", DoclingNamespace},
+		},
+	}
 
 	release, err := installClient.Run(chart, vals)
 	Expect(err).NotTo(HaveOccurred(), "Failed to install Helm chart")
