@@ -150,11 +150,21 @@ jobs:
           go-version-file: go.mod
 
       # ======================================================================
-      # Step 3: Install dependencies (make, kubectl, helm, kind)
+      # Step 3: Install dependencies (docker, make, kubectl, helm, kind)
       # The EC2 runner AMI doesn't have these pre-installed
       # ======================================================================
       - name: Install dependencies
         run: |
+          echo "Installing Docker..."
+          sudo yum install -y docker
+          sudo systemctl start docker
+          sudo systemctl enable docker
+          sudo usermod -aG docker $USER
+          
+          # Allow docker commands without sudo for this session
+          sudo chmod 666 /var/run/docker.sock
+          docker --version
+
           echo "Installing build tools..."
           sudo yum install -y make git
 
