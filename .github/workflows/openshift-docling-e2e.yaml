@@ -1,34 +1,78 @@
+# ============================================================================
+# OpenShift Docling E2E Test Workflow (EC2 Runner)
+# ============================================================================
+#
+# This workflow tests the Spark operator from the OpenDataHub Helm repository:
+#   https://opendatahub-io.github.io/spark-operator
+#
+# Tests performed:
+#   1. Installs Spark operator from remote Helm repo (not local chart)
+#   2. Verifies fsGroup is NOT 185 (OpenShift security requirement)
+#   3. Runs the docling-spark-app workload from examples/openshift/k8s/
+#
+# Infrastructure:
+#   - Uses self-hosted EC2 runners for larger disk space and resources
+#   - EC2 instances are started on-demand and terminated after tests
+#
+# Triggers:
+#   - Manual (workflow_dispatch)
+#   - Push to release* branches when OpenShift-related files change
+#   - Pull requests when OpenShift-related files change
+#
+# ============================================================================
+
 name: OpenShift Docling E2E Test
 
 on:
+  # Manual trigger - allows running from GitHub Actions UI or CLI
   workflow_dispatch:
     inputs:
-      # FUTURE USE:
-      # Maintainers can provide a PR number or existing upstream branch name to run this
-      # job against. If no PR number or branch name is provided, this job will run against
-      # content in the "main" branch instead.
-      pr_or_branch:
-        description: "Pull request number or branch name"
-        required: true
-        default: "main"
+      k8s_version:
+        description: "Kubernetes version to test"
+        required: false
+        default: "v1.30.8"
+
+  # Automatic trigger on push to release branches
   push:
     branches:
-      - main
-      - ec2-github-runner-RHAIENG-2487
+      - release*
+      - doclingSparkTest #temporary branch for testing
+    paths:
+      - 'examples/openshift/**'
+      - 'test/e2e-openshift/**'
+      - '.github/workflows/openshift-docling-e2e.yaml'
+
+  # Automatic trigger on pull requests
+  pull_request:
+    branches:
+      - master
+      - release*
+    paths:
+      - 'examples/openshift/**'
+      - 'test/e2e-openshift/**'
+      - '.github/workflows/openshift-docling-e2e.yaml'
 
 env:
   INSTANCE_TYPE: "m5.xlarge"
 
-# We don't need anything other than Bash for our shell..
+# We don't need anything other than Bash for our shell
 defaults:
   run:
     shell: bash
 
+# Cancel in-progress runs for the same branch
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
+  # ============================================================================
+  # Job 1: Launch EC2 Runner
+  # ============================================================================
   launch-ec2-runner:
     runs-on: ubuntu-latest
     permissions:
-      id-token: write # This is required for OIDC (AWS auth)
+      id-token: write # Required for OIDC (AWS auth)
       contents: read
     outputs:
       label: ${{ steps.start-ec2-runner.outputs.label }}
@@ -70,32 +114,168 @@ jobs:
               {"Key": "GitHubPR", "Value": "${{ github.event.number || 'N/A' }}"}
             ]
 
-  openshift-docling-e2e:
+  # ============================================================================
+  # Job 2: OpenShift E2E Tests (runs on EC2)
+  # ============================================================================
+  openshift-e2e:
+    name: OpenShift E2E Tests
     needs:
       - launch-ec2-runner
     runs-on: ${{ needs.launch-ec2-runner.outputs.label }}
+    env:
+      K8S_VERSION: ${{ inputs.k8s_version || 'v1.30.8' }}
 
     steps:
       - name: Setup Environment
-        run: echo "Running on EC2 ${{ needs.launch-ec2-runner.outputs.ec2-instance-id }}"
-
-      - uses: actions/checkout@v6
-
-      - name: Hello world
         run: |
-          echo hello
+          echo "Running on EC2 ${{ needs.launch-ec2-runner.outputs.ec2-instance-id }}"
+          echo "Instance type: ${{ env.INSTANCE_TYPE }}"
           cat /etc/os-release
           df -h
 
+      # ======================================================================
+      # Step 1: Checkout the repository
+      # ======================================================================
+      - name: Checkout source code
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      # ======================================================================
+      # Step 2: Set up Go
+      # ======================================================================
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+
+      # ======================================================================
+      # Step 3: Free up disk space
+      # The docling-spark image is very large (~800MB+), need space
+      # ======================================================================
+      - name: Free up disk space
+        run: |
+          echo "=== Disk space BEFORE cleanup ==="
+          df -h
+          
+          echo ""
+          echo "Removing unused Docker resources..."
+          docker system prune -af --volumes || true
+          
+          echo ""
+          echo "=== Disk space AFTER cleanup ==="
+          df -h
+
+      # ======================================================================
+      # Step 4: Create a Kind cluster
+      # This creates a local Kubernetes cluster using Docker containers
+      # ======================================================================
+      - name: Create Kind cluster
+        env:
+          K8S_VERSION: ${{ inputs.k8s_version || 'v1.30.8' }}
+        run: |
+          echo "Creating Kind cluster with Kubernetes ${K8S_VERSION}..."
+          make kind-create-cluster KIND_K8S_VERSION=${K8S_VERSION}
+
+      # ======================================================================
+      # Step 5: Verify cluster is ready
+      # ======================================================================
+      - name: Verify cluster
+        run: |
+          echo "Verifying Kind cluster is ready..."
+          kubectl cluster-info
+          kubectl get nodes
+          echo "Cluster is ready!"
+
+      # ======================================================================
+      # Step 6: Add Helm repository
+      # This adds the custom Spark operator Helm repository
+      # ======================================================================
+      - name: Add custom Helm repository
+        run: |
+          echo "Adding Helm repository: https://opendatahub-io.github.io/spark-operator"
+          helm repo add opendatahub-spark-operator https://opendatahub-io.github.io/spark-operator
+          helm repo update
+          echo "Available charts:"
+          helm search repo opendatahub-spark-operator
+
+      # ======================================================================
+      # Step 7: Run OpenShift E2E tests
+      # ======================================================================
+      - name: Run OpenShift E2E tests
+        run: |
+          echo "Running OpenShift E2E tests..."
+          echo "These tests will:"
+          echo "  1. Install Spark operator from https://opendatahub-io.github.io/spark-operator"
+          echo "  2. Verify fsGroup is NOT 185"
+          echo "  3. Run docling-spark-app workload"
+          echo ""
+
+          # Run the OpenShift-specific tests from the separate directory
+          go test ./test/e2e-openshift/ \
+            -v \
+            -ginkgo.v \
+            -timeout 30m
+
+      # ======================================================================
+      # Step 8: Collect logs on failure
+      # ======================================================================
+      - name: Collect logs on failure
+        if: failure()
+        run: |
+          echo "=== Pod Status ==="
+          kubectl get pods -A
+
+          echo ""
+          echo "=== Spark Operator Logs ==="
+          kubectl logs -n spark-operator-openshift -l app.kubernetes.io/name=spark-operator --tail=100 || true
+
+          echo ""
+          echo "=== Docling Namespace Pods ==="
+          kubectl get pods -n docling-spark -o wide || true
+
+          echo ""
+          echo "=== Driver Pod Details ==="
+          kubectl describe pod -n docling-spark -l spark-role=driver || true
+
+          echo ""
+          echo "=== Driver Pod Logs ==="
+          kubectl logs -n docling-spark -l spark-role=driver --tail=100 || true
+
+          echo ""
+          echo "=== SparkApplication Status ==="
+          kubectl get sparkapplication -A -o yaml || true
+
+          echo ""
+          echo "=== Events in docling-spark namespace ==="
+          kubectl get events -n docling-spark --sort-by='.lastTimestamp' || true
+
+          echo ""
+          echo "=== All Recent Events ==="
+          kubectl get events -A --sort-by='.lastTimestamp' | tail -50
+
+      # ======================================================================
+      # Step 9: Cleanup Kind cluster
+      # ======================================================================
+      - name: Cleanup Kind cluster
+        if: always()
+        run: |
+          echo "Cleaning up Kind cluster..."
+          make kind-delete-cluster || true
+
+  # ============================================================================
+  # Job 3: Stop EC2 Runner
+  # ============================================================================
   stop-ec2-runner:
     permissions:
-      id-token: write # This is required for OIDC (AWS auth)
+      id-token: write # Required for OIDC (AWS auth)
       contents: read
     needs:
       - launch-ec2-runner
-      - openshift-docling-e2e
+      - openshift-e2e
     runs-on: ubuntu-latest
     if: ${{ always() && needs.launch-ec2-runner.outputs.ec2-instance-id != '' }}
+
     steps:
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@61815dcd50bd041e203e49132bacad1fd04d2708 # v5.1.1
