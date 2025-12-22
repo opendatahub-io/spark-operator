@@ -124,6 +124,8 @@ jobs:
     runs-on: ${{ needs.launch-ec2-runner.outputs.label }}
     env:
       K8S_VERSION: ${{ inputs.k8s_version || 'v1.30.8' }}
+      GOPATH: ${{ github.workspace }}/go
+      GOMODCACHE: ${{ github.workspace }}/go/pkg/mod
 
     steps:
       - name: Setup Environment
@@ -148,6 +150,13 @@ jobs:
         uses: actions/setup-go@v6
         with:
           go-version-file: go.mod
+
+      - name: Setup Go environment
+        run: |
+          mkdir -p $GOPATH/bin $GOMODCACHE
+          echo "$GOPATH/bin" >> $GITHUB_PATH
+          go version
+          go env
 
       # ======================================================================
       # Step 3: Install dependencies (docker, make, kubectl, helm, kind)
