@@ -155,11 +155,19 @@ jobs:
       # ======================================================================
       - name: Install dependencies
         run: |
-          echo "Installing Docker..."
-          sudo yum install -y docker
+          echo "Installing Docker CE..."
+          # Install required packages
+          sudo yum install -y yum-utils
+          
+          # Add Docker's official repository
+          sudo yum-config-manager --add-repo https://download.docker.com/linux/rhel/docker-ce.repo
+          
+          # Install Docker CE
+          sudo yum install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+          
+          # Start and enable Docker
           sudo systemctl start docker
           sudo systemctl enable docker
-          sudo usermod -aG docker $USER
           
           # Allow docker commands without sudo for this session
           sudo chmod 666 /var/run/docker.sock
