@@ -35,8 +35,8 @@ on:
   # Automatic trigger on push to release branches
   push:
     branches:
-      - release*
-      - doclingSparkTest #temporary branch for testing
+      - odh
+      - openshift-e2e-ec2-runner #temporary branch for testing
     paths:
       - 'examples/openshift/**'
       - 'test/e2e-openshift/**'
@@ -45,8 +45,8 @@ on:
   # Automatic trigger on pull requests
   pull_request:
     branches:
-      - master
-      - release*
+      - odh
+      - openshift-e2e-ec2-runner #temporary branch for testing
     paths:
       - 'examples/openshift/**'
       - 'test/e2e-openshift/**'
