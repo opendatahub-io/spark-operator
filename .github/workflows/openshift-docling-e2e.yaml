@@ -124,9 +124,13 @@ jobs:
     runs-on: ${{ needs.launch-ec2-runner.outputs.label }}
     env:
       K8S_VERSION: ${{ inputs.k8s_version || 'v1.30.8' }}
+      # Go environment
       GOPATH: ${{ github.workspace }}/go
       GOMODCACHE: ${{ github.workspace }}/go/pkg/mod
       GOCACHE: ${{ github.workspace }}/go/cache
+      # Home and Kubernetes config (EC2 runner may not have HOME set)
+      HOME: ${{ github.workspace }}/home
+      KUBECONFIG: ${{ github.workspace }}/home/.kube/config
 
     steps:
       - name: Setup Environment
@@ -135,6 +139,11 @@ jobs:
           echo "Instance type: ${{ env.INSTANCE_TYPE }}"
           cat /etc/os-release
           df -h
+          
+          # Create home and kubeconfig directories
+          mkdir -p $HOME/.kube
+          echo "HOME=$HOME"
+          echo "KUBECONFIG=$KUBECONFIG"
 
       # ======================================================================
       # Step 1: Checkout the repository
@@ -232,7 +241,11 @@ jobs:
             --name spark-operator \
             --config charts/spark-operator-chart/ci/kind-config.yaml \
             --image kindest/node:${K8S_VERSION} \
+            --kubeconfig $KUBECONFIG \
             --wait=1m
+          
+          echo "Kubeconfig written to: $KUBECONFIG"
+          kubectl cluster-info
 
       # ======================================================================
       # Step 6: Verify cluster is ready
