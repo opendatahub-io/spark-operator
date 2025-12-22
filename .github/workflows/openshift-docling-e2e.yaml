@@ -150,7 +150,32 @@ jobs:
           go-version-file: go.mod
 
       # ======================================================================
-      # Step 3: Free up disk space
+      # Step 3: Install dependencies (make, kubectl, helm, kind)
+      # The EC2 runner AMI doesn't have these pre-installed
+      # ======================================================================
+      - name: Install dependencies
+        run: |
+          echo "Installing build tools..."
+          sudo yum install -y make git
+
+          echo "Installing kubectl..."
+          curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
+          sudo install -o root -g root -m 0755 kubectl /usr/local/bin/kubectl
+          kubectl version --client
+
+          echo "Installing Helm..."
+          curl -fsSL https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
+          helm version
+
+          echo "Installing Kind..."
+          curl -Lo ./kind https://kind.sigs.k8s.io/dl/v0.24.0/kind-linux-amd64
+          sudo install -o root -g root -m 0755 kind /usr/local/bin/kind
+          kind version
+
+          echo "All dependencies installed successfully!"
+
+      # ======================================================================
+      # Step 4: Free up disk space
       # The docling-spark image is very large (~800MB+), need space
       # ======================================================================
       - name: Free up disk space
@@ -167,7 +192,7 @@ jobs:
           df -h
 
       # ======================================================================
-      # Step 4: Create a Kind cluster
+      # Step 5: Create a Kind cluster
       # This creates a local Kubernetes cluster using Docker containers
       # ======================================================================
       - name: Create Kind cluster
@@ -178,7 +203,7 @@ jobs:
           make kind-create-cluster KIND_K8S_VERSION=${K8S_VERSION}
 
       # ======================================================================
-      # Step 5: Verify cluster is ready
+      # Step 6: Verify cluster is ready
       # ======================================================================
       - name: Verify cluster
         run: |
@@ -188,7 +213,7 @@ jobs:
           echo "Cluster is ready!"
 
       # ======================================================================
-      # Step 6: Add Helm repository
+      # Step 7: Add Helm repository
       # This adds the custom Spark operator Helm repository
       # ======================================================================
       - name: Add custom Helm repository
@@ -200,7 +225,7 @@ jobs:
           helm search repo opendatahub-spark-operator
 
       # ======================================================================
-      # Step 7: Run OpenShift E2E tests
+      # Step 8: Run OpenShift E2E tests
       # ======================================================================
       - name: Run OpenShift E2E tests
         run: |
@@ -218,7 +243,7 @@ jobs:
             -timeout 30m
 
       # ======================================================================
-      # Step 8: Collect logs on failure
+      # Step 9: Collect logs on failure
       # ======================================================================
       - name: Collect logs on failure
         if: failure()
@@ -255,7 +280,7 @@ jobs:
           kubectl get events -A --sort-by='.lastTimestamp' | tail -50
 
       # ======================================================================
-      # Step 9: Cleanup Kind cluster
+      # Step 10: Cleanup Kind cluster
       # ======================================================================
       - name: Cleanup Kind cluster
         if: always()
