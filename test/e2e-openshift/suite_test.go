@@ -20,9 +20,12 @@ limitations under the License.
 package e2e_openshift_test
 
 import (
+	"bufio"
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -40,8 +43,10 @@ import (
 	admissionregistrationv1 "k8s.io/api/admissionregistration/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/wait"
+	k8syaml "k8s.io/apimachinery/pkg/util/yaml"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/rest"
@@ -154,18 +159,11 @@ var _ = BeforeSuite(func() {
 		logf.Log.Info("Namespace may already exist", "namespace", DoclingNamespace, "error", err)
 	}
 
-	// Create service account for spark driver
-	By("Creating spark-driver service account in docling namespace")
-	sa := &corev1.ServiceAccount{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      "spark-driver",
-			Namespace: DoclingNamespace,
-		},
-	}
-	err = k8sClient.Create(context.TODO(), sa)
-	if err != nil {
-		logf.Log.Info("Service account may already exist", "error", err)
-	}
+	// Apply RBAC from examples/openshift/k8s/base/rbac.yaml
+	// This creates: ServiceAccount, Role, and RoleBinding for spark-driver
+	By("Applying RBAC from examples/openshift/k8s/base/rbac.yaml")
+	rbacPath := filepath.Join("..", "..", "examples", "openshift", "k8s", "base", "rbac.yaml")
+	applyYAMLFile(rbacPath)
 
 	// Add Helm repository
 	By("Adding Helm repository: " + HelmRepoURL)
@@ -409,4 +407,66 @@ func waitForSparkApplicationCompleted(ctx context.Context, key types.NamespacedN
 		}
 		return false, nil
 	})
+}
+
+// ============================================================================
+// YAML Helper Functions
+// ============================================================================
+
+// applyYAMLFile reads a YAML file and applies all resources it contains.
+// Supports multi-document YAML files (separated by ---).
+func applyYAMLFile(path string) {
+	logf.Log.Info("Applying YAML file", "path", path)
+
+	data, err := os.ReadFile(path)
+	Expect(err).NotTo(HaveOccurred(), "Failed to read YAML file: %s", path)
+
+	// Split by YAML document separator and process each document
+	reader := k8syaml.NewYAMLReader(bufio.NewReader(bytes.NewReader(data)))
+
+	for {
+		doc, err := reader.Read()
+		if err != nil {
+			if err == io.EOF {
+				break
+			}
+			Expect(err).NotTo(HaveOccurred(), "Failed to read YAML document")
+		}
+
+		// Skip empty documents
+		if len(bytes.TrimSpace(doc)) == 0 {
+			continue
+		}
+
+		// Decode into unstructured object
+		obj := &unstructured.Unstructured{}
+		decoder := k8syaml.NewYAMLOrJSONDecoder(bytes.NewReader(doc), 4096)
+		err = decoder.Decode(obj)
+		if err != nil {
+			if err == io.EOF {
+				continue
+			}
+			Expect(err).NotTo(HaveOccurred(), "Failed to decode YAML document")
+		}
+
+		// Skip empty or invalid objects
+		if obj.GetKind() == "" {
+			continue
+		}
+
+		// Create the resource
+		err = k8sClient.Create(context.TODO(), obj)
+		if err != nil {
+			logf.Log.Info("Resource may already exist",
+				"kind", obj.GetKind(),
+				"name", obj.GetName(),
+				"namespace", obj.GetNamespace(),
+				"error", err)
+		} else {
+			logf.Log.Info("Created resource",
+				"kind", obj.GetKind(),
+				"name", obj.GetName(),
+				"namespace", obj.GetNamespace())
+		}
+	}
 }
