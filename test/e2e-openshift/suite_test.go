@@ -278,7 +278,7 @@ func installChartFromRepo() {
 	// Install with custom values - watch docling-spark namespace
 	vals := map[string]interface{}{
 		"spark": map[string]interface{}{
-			"namespaces": []string{"default", DoclingNamespace},
+			"jobNamespaces": []string{"default", DoclingNamespace},
 		},
 	}
 
