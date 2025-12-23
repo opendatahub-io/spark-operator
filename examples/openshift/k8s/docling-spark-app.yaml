@@ -2,7 +2,7 @@ apiVersion: "sparkoperator.k8s.io/v1beta2"
 kind: SparkApplication
 metadata:
   name: docling-spark-job
-  namespace: docling-spark
+  namespace: default
 spec:
   type: Python
   pythonVersion: "3"

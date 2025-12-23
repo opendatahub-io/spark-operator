@@ -87,9 +87,6 @@ const (
 	HelmRepoURL  = "https://opendatahub-io.github.io/spark-operator"
 	ChartName    = "spark-operator"
 
-	// Namespace for docling spark app
-	DoclingNamespace = "docling-spark"
-
 	// Timeouts
 	PollInterval = 1 * time.Second
 	WaitTimeout  = 5 * time.Minute
@@ -152,13 +149,6 @@ var _ = BeforeSuite(func() {
 		logf.Log.Info("Namespace may already exist", "namespace", ReleaseNamespace, "error", err)
 	}
 
-	By("Creating docling namespace: " + DoclingNamespace)
-	doclingNs := &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: DoclingNamespace}}
-	err = k8sClient.Create(context.TODO(), doclingNs)
-	if err != nil {
-		logf.Log.Info("Namespace may already exist", "namespace", DoclingNamespace, "error", err)
-	}
-
 	// Apply RBAC from examples/openshift/k8s/base/rbac.yaml
 	// This creates: ServiceAccount, Role, and RoleBinding for spark-driver
 	By("Applying RBAC from examples/openshift/k8s/base/rbac.yaml")
@@ -200,10 +190,6 @@ var _ = AfterSuite(func() {
 	By("Deleting release namespace")
 	releaseNs := &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: ReleaseNamespace}}
 	_ = k8sClient.Delete(context.TODO(), releaseNs)
-
-	By("Deleting docling namespace")
-	doclingNs := &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: DoclingNamespace}}
-	_ = k8sClient.Delete(context.TODO(), doclingNs)
 
 	// Stop test environment
 	By("Stopping test environment")
@@ -275,14 +261,8 @@ func installChartFromRepo() {
 	chart, err := loader.Load(chartPath)
 	Expect(err).NotTo(HaveOccurred(), "Failed to load chart from: %s", chartPath)
 
-	// Install with custom values - watch docling-spark namespace
-	vals := map[string]interface{}{
-		"spark": map[string]interface{}{
-			"jobNamespaces": []string{"default", DoclingNamespace},
-		},
-	}
-
-	release, err := installClient.Run(chart, vals)
+	// Install with default values - chart already watches "default" namespace
+	release, err := installClient.Run(chart, nil)
 	Expect(err).NotTo(HaveOccurred(), "Failed to install Helm chart")
 	Expect(release).NotTo(BeNil())
 
