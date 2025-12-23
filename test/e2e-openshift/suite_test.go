@@ -78,6 +78,9 @@ const (
 	ReleaseName      = "spark-operator-openshift"
 	ReleaseNamespace = "spark-operator-openshift"
 
+	// Namespace for SparkApplications (the operator will watch this namespace)
+	DoclingNamespace = "docling-spark"
+
 	// Webhook names (must match what the chart creates: {{ fullname }}-webhook)
 	MutatingWebhookName   = "spark-operator-openshift-webhook"
 	ValidatingWebhookName = "spark-operator-openshift-webhook"
@@ -149,6 +152,13 @@ var _ = BeforeSuite(func() {
 		logf.Log.Info("Namespace may already exist", "namespace", ReleaseNamespace, "error", err)
 	}
 
+	By("Creating docling namespace: " + DoclingNamespace)
+	doclingNs := &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: DoclingNamespace}}
+	err = k8sClient.Create(context.TODO(), doclingNs)
+	if err != nil {
+		logf.Log.Info("Namespace may already exist", "namespace", DoclingNamespace, "error", err)
+	}
+
 	// Apply RBAC from examples/openshift/k8s/base/rbac.yaml
 	// This creates: ServiceAccount, Role, and RoleBinding for spark-driver
 	By("Applying RBAC from examples/openshift/k8s/base/rbac.yaml")
@@ -187,6 +197,10 @@ var _ = AfterSuite(func() {
 	uninstallChart()
 
 	// Delete namespaces
+	By("Deleting docling namespace")
+	doclingNs := &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: DoclingNamespace}}
+	_ = k8sClient.Delete(context.TODO(), doclingNs)
+
 	By("Deleting release namespace")
 	releaseNs := &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: ReleaseNamespace}}
 	_ = k8sClient.Delete(context.TODO(), releaseNs)
@@ -261,15 +275,22 @@ func installChartFromRepo() {
 	chart, err := loader.Load(chartPath)
 	Expect(err).NotTo(HaveOccurred(), "Failed to load chart from: %s", chartPath)
 
-	// Install with default values - chart already watches "default" namespace
-	release, err := installClient.Run(chart, nil)
+	// Configure operator to watch the docling-spark namespace
+	vals := map[string]interface{}{
+		"spark": map[string]interface{}{
+			"jobNamespaces": []string{DoclingNamespace},
+		},
+	}
+
+	release, err := installClient.Run(chart, vals)
 	Expect(err).NotTo(HaveOccurred(), "Failed to install Helm chart")
 	Expect(release).NotTo(BeNil())
 
 	logf.Log.Info("Successfully installed Spark operator",
 		"release", ReleaseName,
 		"namespace", ReleaseNamespace,
-		"chart", chartRef)
+		"chart", chartRef,
+		"jobNamespaces", DoclingNamespace)
 }
 
 // uninstallChart removes the Helm release

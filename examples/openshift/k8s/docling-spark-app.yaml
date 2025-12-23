@@ -2,13 +2,12 @@ apiVersion: "sparkoperator.k8s.io/v1beta2"
 kind: SparkApplication
 metadata:
   name: docling-spark-job
-  namespace: default
+  namespace: docling-spark
 spec:
   type: Python
   pythonVersion: "3"
   mode: cluster
-  # Using pinned digest to ensure image with PDFs is used
-  image: quay.io/rishasin/docling-spark@sha256:8c51dbbd02b51e00ad8fa60da68cafb983b29dbdfa6533ebd4daba119fe9c953
+  image: quay.io/ssankepe/docling-spark:with-pdfs
   imagePullPolicy: IfNotPresent
   timeToLiveSeconds: 1200  # <--- (Keeps pod for 20 minutes)
   mainApplicationFile: local:///app/scripts/run_spark_job.py

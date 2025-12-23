@@ -4,13 +4,13 @@ apiVersion: v1
 kind: ServiceAccount
 metadata:
   name: spark-driver
-  namespace: default
+  namespace: docling-spark
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
 metadata:
   name: spark-role
-  namespace: default
+  namespace: docling-spark
 rules:
 - apiGroups: [""]
   resources: ["pods", "services", "configmaps", "persistentvolumeclaims"]
@@ -26,11 +26,11 @@ apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
 metadata:
   name: spark-role-binding
-  namespace: default
+  namespace: docling-spark
 subjects:
 - kind: ServiceAccount
   name: spark-driver
-  namespace: default
+  namespace: docling-spark
 roleRef:
   kind: Role
   name: spark-role
