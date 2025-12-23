@@ -258,7 +258,27 @@ jobs:
           echo "Cluster is ready!"
 
       # ======================================================================
-      # Step 7: Add Helm repository
+      # Step 7: Pre-pull and load docling-spark image into Kind
+      # This ensures the exact image with PDFs is available in the cluster
+      # ======================================================================
+      - name: Pre-pull and load docling-spark image
+        run: |
+          echo "Pulling docling-spark image..."
+          docker pull quay.io/rishasin/docling-spark:latest
+          
+          echo ""
+          echo "Verifying PDFs exist in image..."
+          docker run --rm quay.io/rishasin/docling-spark:latest ls -la /app/assets/
+          
+          echo ""
+          echo "Loading image into Kind cluster..."
+          kind load docker-image quay.io/rishasin/docling-spark:latest --name spark-operator
+          
+          echo ""
+          echo "✅ Image loaded into Kind cluster successfully!"
+
+      # ======================================================================
+      # Step 8: Add Helm repository
       # This adds the custom Spark operator Helm repository
       # ======================================================================
       - name: Add custom Helm repository
@@ -270,7 +290,7 @@ jobs:
           helm search repo opendatahub-spark-operator
 
       # ======================================================================
-      # Step 8: Run OpenShift E2E tests
+      # Step 9: Run OpenShift E2E tests
       # ======================================================================
       - name: Run OpenShift E2E tests
         run: |
@@ -288,7 +308,7 @@ jobs:
             -timeout 30m
 
       # ======================================================================
-      # Step 9: Collect logs on failure
+      # Step 10: Collect logs on failure
       # ======================================================================
       - name: Collect logs on failure
         if: failure()
@@ -325,7 +345,7 @@ jobs:
           kubectl get events -A --sort-by='.lastTimestamp' | tail -50
 
       # ======================================================================
-      # Step 10: Cleanup Kind cluster
+      # Step 11: Cleanup Kind cluster
       # ======================================================================
       - name: Cleanup Kind cluster
         if: always()
