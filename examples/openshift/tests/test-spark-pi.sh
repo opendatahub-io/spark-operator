@@ -66,12 +66,12 @@ trap cleanup EXIT
 
 get_app_state() {
     kubectl get sparkapplication "$APP_NAME" -n "$APP_NAMESPACE" \
-        -o jsonpath='{.status.appState.state}' 2>/dev/null || echo "NOT_FOUND"
+        -o jsonpath='{.status.applicationState.state}' 2>/dev/null || echo "NOT_FOUND"
 }
 
 get_app_error() {
     kubectl get sparkapplication "$APP_NAME" -n "$APP_NAMESPACE" \
-        -o jsonpath='{.status.appState.errorMessage}' 2>/dev/null || echo ""
+        -o jsonpath='{.status.applicationState.errorMessage}' 2>/dev/null || echo ""
 }
 
 # ============================================================================
