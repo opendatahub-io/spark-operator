@@ -71,10 +71,14 @@ if ! helm repo add "$HELM_REPO_NAME" "$HELM_REPO_URL" 2>/dev/null; then
 fi
 helm repo update
 
+log "Creating job namespace: $EXPECTED_JOB_NAMESPACE"
+kubectl create namespace "$EXPECTED_JOB_NAMESPACE" --dry-run=client -o yaml | kubectl apply -f -
+
 log "Installing Spark Operator..."
 log "  Release:   $RELEASE_NAME"
 log "  Namespace: $RELEASE_NAMESPACE"
 log "  Chart:     $HELM_REPO_NAME/$CHART_NAME"
+log "  Job Namespace: $EXPECTED_JOB_NAMESPACE"
 
 helm install "$RELEASE_NAME" "$HELM_REPO_NAME/$CHART_NAME" \
     --namespace "$RELEASE_NAMESPACE" \
