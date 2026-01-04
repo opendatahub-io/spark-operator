@@ -77,14 +77,14 @@ jobs:
           kubectl cluster-info
 
       # ======================================================================
-      # Step 5: Run operator install test
+      # Step 5: Run operator install test (keep operator for Spark Pi test)
       # ======================================================================
       - name: Run operator install test
         working-directory: examples/openshift/tests
         run: |
           echo "Running operator install test..."
           chmod +x test-operator-install.sh
-          ./test-operator-install.sh
+          CLEANUP=false ./test-operator-install.sh
 
       # ======================================================================
       # Step 6: Run Spark Pi test
@@ -96,15 +96,7 @@ jobs:
           chmod +x test-spark-pi.sh
           ./test-spark-pi.sh
 
-      # ======================================================================
-      # Step 7: Cleanup (on success)
-      # ======================================================================
-      - name: Cleanup
-        if: always()
-        working-directory: examples/openshift/tests
-        run: |
-          echo "Cleaning up resources..."
-          CLEANUP=true ./test-operator-install.sh 2>/dev/null || true
+      # Note: No explicit cleanup step needed - Kind cluster deletion handles it
 
       # ======================================================================
       # Debug: Show cluster state on failure

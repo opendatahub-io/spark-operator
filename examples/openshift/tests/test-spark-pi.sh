@@ -117,41 +117,14 @@ echo "  Image:     $SPARK_IMAGE"
 # Delete existing app if present
 kubectl delete sparkapplication "$APP_NAME" -n "$APP_NAMESPACE" --ignore-not-found 2>/dev/null || true
 
-# Apply the SparkApplication
-kubectl apply -f - <<EOF
-apiVersion: sparkoperator.k8s.io/v1beta2
-kind: SparkApplication
-metadata:
-  name: $APP_NAME
-  namespace: $APP_NAMESPACE
-spec:
-  type: Scala
-  mode: cluster
-  image: $SPARK_IMAGE
-  imagePullPolicy: IfNotPresent
-  mainClass: org.apache.spark.examples.SparkPi
-  mainApplicationFile: local:///opt/spark/examples/jars/spark-examples_2.12-3.5.0.jar
-  arguments:
-    - "1000"
-  sparkVersion: "3.5.0"
-  restartPolicy:
-    type: Never
-  driver:
-    cores: 1
-    coreLimit: "1200m"
-    memory: "512m"
-    labels:
-      version: 3.5.0
-    serviceAccount: spark-driver
-    securityContext: {}
-  executor:
-    cores: 1
-    instances: 1
-    memory: "512m"
-    labels:
-      version: 3.5.0
-    securityContext: {}
-EOF
+# Apply the SparkApplication from YAML file (using envsubst for variable substitution)
+APP_YAML="${APP_YAML:-$SCRIPT_DIR/spark-pi-app.yaml}"
+if [ ! -f "$APP_YAML" ]; then
+    fail "SparkApplication YAML not found: $APP_YAML"
+fi
+
+export APP_NAME APP_NAMESPACE SPARK_IMAGE
+envsubst < "$APP_YAML" | kubectl apply -f -
 
 pass "SparkApplication submitted"
 
@@ -187,7 +160,7 @@ while [ $SECONDS -lt $TIMEOUT_SECONDS ]; do
             fail "SparkApplication failed!"
             ;;
         FAILED_SUBMISSION)
-            echo ""
+            echo ""e
             echo "=== Submission Failed ==="
             echo "Error: $(get_app_error)"
             fail "SparkApplication submission failed!"

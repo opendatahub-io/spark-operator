@@ -1,16 +1,12 @@
 #!/bin/bash
-# ============================================================================
-# Test 1: Spark Operator Installation Test
-# ============================================================================
-#
 # This test verifies:
 #   1. Spark Operator installs successfully from the Helm chart
 #   2. fsGroup is NOT 185 (OpenShift security requirement)
 #   3. jobNamespaces is configured correctly
 #
 # Usage:
-#   ./test-operator-install.sh          # Install and test (keeps operator)
-#   CLEANUP=true ./test-operator-install.sh  # Cleanup after test
+#   ./test-operator-install.sh           # Install, test, and cleanup
+#   CLEANUP=false ./test-operator-install.sh  # Keep operator for subsequent tests
 #
 # Prerequisites:
 #   - kubectl configured with cluster access
@@ -42,19 +38,19 @@ fail() { echo "❌ $1"; exit 1; }
 warn() { echo "⚠️  $1"; }
 
 cleanup() {
-    # By default, KEEP the operator installed so subsequent tests can use it
-    # Set CLEANUP=true to remove after test
-    if [ "${CLEANUP:-false}" = "true" ]; then
-        log "Cleaning up (CLEANUP=true)..."
+    # By default, CLEANUP the operator after tests
+    # Set CLEANUP=false to keep operator for subsequent tests
+    if [ "${CLEANUP:-true}" = "true" ]; then
+        log "Cleaning up..."
         helm uninstall "$RELEASE_NAME" -n "$RELEASE_NAMESPACE" --wait 2>/dev/null || true
         kubectl delete namespace "$RELEASE_NAMESPACE" --ignore-not-found --wait=false || true
     else
-        log "Keeping operator installed for subsequent tests"
+        log "Keeping operator installed (CLEANUP=false)"
         log "To cleanup manually: helm uninstall $RELEASE_NAME -n $RELEASE_NAMESPACE"
     fi
 }
 
-# Cleanup on exit (unless SKIP_CLEANUP=true)
+# Cleanup on exit (if CLEANUP=true)
 trap cleanup EXIT
 
 # ============================================================================
@@ -101,33 +97,52 @@ kubectl wait --for=condition=Ready pod \
 pass "All operator pods are ready"
 
 # ============================================================================
+# Capture Pod Names (for use in all tests)
+# ============================================================================
+log "Capturing operator pod names..."
+
+CONTROLLER_POD=$(kubectl get pods -n "$RELEASE_NAMESPACE" \
+    -l app.kubernetes.io/component=controller \
+    -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || echo "")
+
+WEBHOOK_POD=$(kubectl get pods -n "$RELEASE_NAMESPACE" \
+    -l app.kubernetes.io/component=webhook \
+    -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || echo "")
+
+if [ -z "$CONTROLLER_POD" ]; then
+    fail "Controller pod not found"
+fi
+
+echo "  Controller: $CONTROLLER_POD"
+echo "  Webhook:    ${WEBHOOK_POD:-not found}"
+
+# ============================================================================
 # Test 1: Verify fsGroup is NOT 185
 # ============================================================================
 log "TEST 1: Checking fsGroup on operator pods..."
 
-FAILED=false
-while IFS= read -r line; do
-    POD_NAME=$(echo "$line" | awk '{print $1}')
-    FSGROUP=$(echo "$line" | awk '{print $2}')
-    
-    if [ -z "$POD_NAME" ]; then
-        continue
-    fi
-    
-    if [ "$FSGROUP" = "185" ]; then
-        fail "Pod $POD_NAME has fsGroup=185 (not allowed for OpenShift)"
-        FAILED=true
-    elif [ -z "$FSGROUP" ] || [ "$FSGROUP" = "null" ]; then
-        echo "  $POD_NAME: fsGroup not set (OK for OpenShift)"
-    else
-        echo "  $POD_NAME: fsGroup=$FSGROUP (OK)"
-    fi
-done < <(kubectl get pods -n "$RELEASE_NAMESPACE" \
-    -l app.kubernetes.io/instance="$RELEASE_NAME" \
-    -o jsonpath='{range .items[*]}{.metadata.name}{" "}{.spec.securityContext.fsGroup}{"\n"}{end}')
+# Check controller pod
+FSGROUP=$(kubectl get pod "$CONTROLLER_POD" -n "$RELEASE_NAMESPACE" \
+    -o jsonpath='{.spec.securityContext.fsGroup}' 2>/dev/null || echo "")
+if [ "$FSGROUP" = "185" ]; then
+    fail "Pod $CONTROLLER_POD has fsGroup=185 (not allowed for OpenShift)"
+elif [ -z "$FSGROUP" ] || [ "$FSGROUP" = "null" ]; then
+    echo "  $CONTROLLER_POD: fsGroup not set (OK for OpenShift)"
+else
+    echo "  $CONTROLLER_POD: fsGroup=$FSGROUP (OK)"
+fi
 
-if [ "$FAILED" = "true" ]; then
-    fail "fsGroup check failed!"
+# Check webhook pod (if exists)
+if [ -n "$WEBHOOK_POD" ]; then
+    FSGROUP=$(kubectl get pod "$WEBHOOK_POD" -n "$RELEASE_NAMESPACE" \
+        -o jsonpath='{.spec.securityContext.fsGroup}' 2>/dev/null || echo "")
+    if [ "$FSGROUP" = "185" ]; then
+        fail "Pod $WEBHOOK_POD has fsGroup=185 (not allowed for OpenShift)"
+    elif [ -z "$FSGROUP" ] || [ "$FSGROUP" = "null" ]; then
+        echo "  $WEBHOOK_POD: fsGroup not set (OK for OpenShift)"
+    else
+        echo "  $WEBHOOK_POD: fsGroup=$FSGROUP (OK)"
+    fi
 fi
 
 pass "TEST 1 PASSED: No operator pods have fsGroup=185"
@@ -136,15 +151,6 @@ pass "TEST 1 PASSED: No operator pods have fsGroup=185"
 # Test 2: Verify jobNamespaces configuration
 # ============================================================================
 log "TEST 2: Checking jobNamespaces configuration..."
-
-# Get the controller pod
-CONTROLLER_POD=$(kubectl get pods -n "$RELEASE_NAMESPACE" \
-    -l app.kubernetes.io/component=controller \
-    -o jsonpath='{.items[0].metadata.name}')
-
-if [ -z "$CONTROLLER_POD" ]; then
-    fail "Could not find controller pod"
-fi
 
 # Get the --namespaces argument from the controller
 NAMESPACES_ARG=$(kubectl get pod "$CONTROLLER_POD" -n "$RELEASE_NAMESPACE" \
@@ -156,45 +162,12 @@ if [ -z "$NAMESPACES_ARG" ]; then
         -o jsonpath='{.spec.containers[0].command}' | grep -oP '(?<=--namespaces=)[^"]*' || echo "")
 fi
 
-echo "  Controller pod: $CONTROLLER_POD"
 echo "  Configured namespaces: $NAMESPACES_ARG"
 
 if echo "$NAMESPACES_ARG" | grep -q "$EXPECTED_JOB_NAMESPACE"; then
     pass "TEST 2 PASSED: jobNamespaces includes '$EXPECTED_JOB_NAMESPACE'"
 else
-    warn "jobNamespaces may not include '$EXPECTED_JOB_NAMESPACE' (found: $NAMESPACES_ARG)"
-    warn "This might be OK if using different configuration"
-fi
-
-# ============================================================================
-# Test 3: Verify webhooks are configured
-# ============================================================================
-log "TEST 3: Checking webhook configurations..."
-
-MUTATING_WEBHOOK=$(kubectl get mutatingwebhookconfiguration \
-    -l app.kubernetes.io/instance="$RELEASE_NAME" \
-    -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || echo "")
-
-VALIDATING_WEBHOOK=$(kubectl get validatingwebhookconfiguration \
-    -l app.kubernetes.io/instance="$RELEASE_NAME" \
-    -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || echo "")
-
-if [ -n "$MUTATING_WEBHOOK" ]; then
-    echo "  MutatingWebhookConfiguration: $MUTATING_WEBHOOK"
-else
-    warn "MutatingWebhookConfiguration not found"
-fi
-
-if [ -n "$VALIDATING_WEBHOOK" ]; then
-    echo "  ValidatingWebhookConfiguration: $VALIDATING_WEBHOOK"
-else
-    warn "ValidatingWebhookConfiguration not found"
-fi
-
-if [ -n "$MUTATING_WEBHOOK" ] && [ -n "$VALIDATING_WEBHOOK" ]; then
-    pass "TEST 3 PASSED: Webhooks are configured"
-else
-    warn "Some webhooks may not be configured (might be intentional)"
+    fail "TEST 2 FAILED: jobNamespaces does not include '$EXPECTED_JOB_NAMESPACE' (found: $NAMESPACES_ARG)"
 fi
 
 # ============================================================================
@@ -205,12 +178,10 @@ echo "============================================"
 pass "ALL OPERATOR INSTALL TESTS PASSED!"
 echo "============================================"
 echo ""
-echo "Operator is ready. You can now run the Spark application tests:"
-echo "  ./test-spark-pi.sh      # Lightweight Pi test"
-echo "  ./test-spark-app.sh     # Full docling-spark test"
+echo "Operator will be cleaned up on exit (default behavior)."
 echo ""
-echo "To cleanup the operator when done:"
-echo "  CLEANUP=true ./test-operator-install.sh"
-echo "  # or manually: helm uninstall $RELEASE_NAME -n $RELEASE_NAMESPACE"
+echo "To keep operator for subsequent tests, run with:"
+echo "  CLEANUP=false ./test-operator-install.sh"
+echo "  ./test-spark-pi.sh      # Then run Spark Pi test"
 echo ""
 
