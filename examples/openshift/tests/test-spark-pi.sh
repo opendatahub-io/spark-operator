@@ -160,7 +160,7 @@ while [ $SECONDS -lt $TIMEOUT_SECONDS ]; do
             fail "SparkApplication failed!"
             ;;
         FAILED_SUBMISSION)
-            echo ""e
+            echo ""
             echo "=== Submission Failed ==="
             echo "Error: $(get_app_error)"
             fail "SparkApplication submission failed!"
