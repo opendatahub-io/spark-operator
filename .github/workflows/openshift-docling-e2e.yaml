@@ -30,10 +30,6 @@ on:
         description: "Kubernetes version to test"
         required: false
         default: "v1.30.8"
-      pr_or_branch:
-        description: "Pull request number or branch name"
-        required: true
-        default: "odh"
 
   # Automatic trigger on push to release branches
   push:
