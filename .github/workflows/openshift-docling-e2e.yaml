@@ -38,6 +38,9 @@ on:
     paths:
       - 'examples/openshift/**'
       - '.github/workflows/openshift-docling-e2e.yaml'
+  pull_request:
+    branches:
+      - TESTOpenshiftDoclingE2E
 
 env:
   INSTANCE_TYPE: "m5.xlarge"
