@@ -35,6 +35,7 @@ on:
   push:
     branches:
       - odh
+      - TESTOpenshiftDoclingE2E
     paths:
       - 'examples/openshift/**'
       - '.github/workflows/openshift-docling-e2e.yaml'
