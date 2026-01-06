@@ -208,10 +208,7 @@ oc apply -f k8s/base/validating-admission-policy.yaml
 oc apply -f k8s/base/validating-admission-policy-binding.yaml
 ```
 
-**Disable the policy**: 
-```bash
-oc delete validatingadmissionpolicybinding deny-fsgroup-in-sparkapplication-binding
-```
+> Note: To Disable the policy: ```oc delete validatingadmissionpolicybinding deny-fsgroup-in-sparkapplication-binding```
 
 ## 4. About Docling-Spark Application
 
@@ -229,88 +226,11 @@ The `docling-spark` application demonstrates a production-grade pattern for proc
 5.  **Driver** collects results and writes to **output PVC**.
 6.  Download results from output PVC anytime.
 
-## 5. Choose Your Deployment Path
+## 5. Deploying the Docling-Spark Application
 
-You have two options depending on your use case:
+This section uses the **pre-built image** `quay.io/rishasin/docling-spark:latest` which contains the Docling + PySpark application with all dependencies. The manifest `k8s/docling-spark-app.yaml` is already configured to use this image.
 
-| Option | Best For | Build Required |
-|--------|----------|----------------|
-| **A: Use Pre-Built Image** | Quick start, testing | No |
-| **B: Build Your Own Image** | Custom dependencies, full control | Yes |
-
-Both options use **PVC-based storage** for input and output data.
-
----
-#### **Image Compatibility Rationale (Arbitrary UID)**
-
-> The `Dockerfile` has been modified to ensure the container image is compatible with OpenShift security model, which enforces running containers with a random, non-root User ID (UID).
->
-> **Key Changes:**
-> - All directories are owned by **Group ID 0 (root)** and made **group-writable** (`chmod -R g=u`)
-> - This allows the arbitrary non-root UID (who is a member of Group 0) to read/write all necessary paths
-> - `ENV HOME=/home/spark` is set for Spark temp files
-> - **No hardcoded UID** - we removed `USER 185` and `useradd` commands
-> - **No `USER` directive at the end** - OpenShift assigns the arbitrary UID at runtime
-
-```dockerfile
-# Set Spark directories to be owned by group 0 and group-writable
-RUN chgrp -R 0 /opt/spark && \
-    chmod -R g=u /opt/spark && \
-    mkdir -p /opt/spark/work-dir /opt/spark/logs && \
-    chgrp -R 0 /opt/spark/work-dir /opt/spark/logs && \
-    chmod -R 775 /opt/spark/work-dir /opt/spark/logs
-
-# Ensure /tmp is writable
-RUN chmod 1777 /tmp
-
-# Set HOME for Spark temp files
-ENV HOME=/home/spark
-
-# Create directories for PVC mounts with GID 0 ownership
-RUN mkdir -p /app/assets /app/output /app/scripts /home/spark && \
-    chgrp -R 0 /app /home/spark && \
-    chmod -R g=u /app /home/spark && \
-    chmod -R 775 /app/output /home/spark
-```
-
-### Option A: Use Pre-Built Image (Recommended for Quick Start)
-
-Use the pre-built image `quay.io/rishasin/docling-spark:latest` which contains the Docling + PySpark application. Skip the build step and proceed directly to Section 6 for deployment.
-
-The manifest `k8s/docling-spark-app.yaml` is already configured to use this image.
-
-### Option B: Build Your Own Image
-
-Build your own image if you need custom dependencies or want to use your own container registry.
-
-#### Step 1: Build and Push Your Image
-
-```bash
-cd examples/openshift
-
-# Build the image for Red Hat AI (Linux AMD64)
-docker buildx build --platform linux/amd64 \
-  -t quay.io/YOUR_USERNAME/docling-spark:latest \
-  --push .
-```
-
-> **Note:** The `--platform linux/amd64` flag ensures the image runs on ROSA nodes, even if you're building on Apple Silicon (M1/M2/M3 Mac).
-
-#### Step 2: Update the Manifest
-
-Edit `k8s/docling-spark-app.yaml` to use your image:
-
-```yaml
-image: quay.io/YOUR_USERNAME/docling-spark:latest # ← Update this line
-```
-
-#### Step 3: Deploy
-
-Follow Section 6 for the complete deployment steps.
-
----
-
-## 6. Deploying the Docling-Spark Application to Red Hat AI
+> **Building Custom Images?** If you need custom dependencies or want to use your own container registry, see [Building Custom Spark Images for OpenShift](./BuildingCustomSparkImages.md) for best practices on OpenShift compatibility and build instructions.
 
 ### Step 1: Upload Your PDFs
 
@@ -483,7 +403,7 @@ oc port-forward -n docling-spark svc/docling-spark-job-ui-svc 4040:4040
 # Open: http://localhost:4040
 ```
 
-## 7. Quick Reference
+## 6. Quick Reference
 
 | Action | Command |
 |--------|---------|
@@ -494,9 +414,8 @@ oc port-forward -n docling-spark svc/docling-spark-job-ui-svc 4040:4040
 | Delete job | `oc delete sparkapplication docling-spark-job -n docling-spark` |
 | Download results | `./k8s/deploy.sh download ./output/` |
 | Cleanup helpers | `./k8s/deploy.sh cleanup` |
-| Build custom image | `docker buildx build --platform linux/amd64 -t quay.io/YOU/docling-spark:latest --push .` |
 
-## 8. Debugging and Logging
+## 7. Debugging and Logging
 
 ### Operator Logs
 If your Spark jobs are not starting (e.g., no pods created), check the operator logs:
@@ -527,7 +446,7 @@ oc get csidriver ebs.csi.aws.com -o yaml | grep fsGroupPolicy
 # Expected: fsGroupPolicy: File
 ```
 
-## 9. Component Overview
+## 8. Component Overview
 
 | Path | Description |
 |------|-------------|
@@ -542,7 +461,7 @@ oc get csidriver ebs.csi.aws.com -o yaml | grep fsGroupPolicy
 
 > **Storage Note:** Both PVCs default to 10Gi. For text + metadata outputs, this is typically sufficient since output is often smaller than the source PDFs. However, if you plan to export additional artifacts (images, per-page outputs, multiple formats like JSON/MD/HTML), increase the output PVC size accordingly.
 
-## 10. Cleanup
+## 9. Cleanup
 
 ```bash
 # Delete the SparkApplication
