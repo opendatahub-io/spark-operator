@@ -24,11 +24,13 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
 	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/yaml"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -47,7 +49,7 @@ import (
 // 3. The docling-spark-app workload runs successfully
 //
 // To run these tests:
-//   go test ./test/e2e-openshift/ -v -ginkgo.v -timeout 30m
+//   go test -tags=openshift ./examples/openshift/tests/ -v -ginkgo.v -timeout 30m
 //
 // ============================================================================
 
@@ -139,8 +141,7 @@ var _ = Describe("OpenShift Spark Operator", func() {
 			By("Parsing docling-spark-app.yaml")
 			file, err := os.Open(path)
 			Expect(err).NotTo(HaveOccurred(), "Failed to open %s", path)
-			Expect(file).NotTo(BeNil())
-			defer func() { _ = file.Close() }()
+			defer file.Close()
 
 			decoder := yaml.NewYAMLOrJSONDecoder(file, 100)
 			Expect(decoder).NotTo(BeNil())
@@ -153,8 +154,16 @@ var _ = Describe("OpenShift Spark Operator", func() {
 			GinkgoWriter.Printf("  Name: %s\n", app.Name)
 			GinkgoWriter.Printf("  Namespace: %s\n", app.Namespace)
 			GinkgoWriter.Printf("  Type: %s\n", app.Spec.Type)
-			GinkgoWriter.Printf("  Image: %s\n", *app.Spec.Image)
-			GinkgoWriter.Printf("  MainApplicationFile: %s\n", *app.Spec.MainApplicationFile)
+			if app.Spec.Image != nil {
+				GinkgoWriter.Printf("  Image: %s\n", *app.Spec.Image)
+			} else {
+				GinkgoWriter.Printf("  Image: <not set>\n")
+			}
+			if app.Spec.MainApplicationFile != nil {
+				GinkgoWriter.Printf("  MainApplicationFile: %s\n", *app.Spec.MainApplicationFile)
+			} else {
+				GinkgoWriter.Printf("  MainApplicationFile: <not set>\n")
+			}
 
 			// Inject SKIP_SLEEP env var for testing (skip the 60-minute sleep)
 			By("Injecting SKIP_SLEEP=true environment variable")
@@ -187,27 +196,37 @@ var _ = Describe("OpenShift Spark Operator", func() {
 
 				// Fetch the latest version before deleting
 				currentApp := &v1beta2.SparkApplication{}
-				if err := k8sClient.Get(ctx, key, currentApp); err == nil {
-					if err := k8sClient.Delete(ctx, currentApp); err != nil {
-						GinkgoWriter.Printf("Warning: Failed to delete SparkApplication: %v\n", err)
-					} else {
-						GinkgoWriter.Printf("✓ SparkApplication deleted\n")
+				err := k8sClient.Get(ctx, key, currentApp)
+				if err != nil {
+					if !apierrors.IsNotFound(err) {
+						// Unexpected error (network issue, API error, etc.) - warn user
+						GinkgoWriter.Printf("Warning: Failed to get SparkApplication for cleanup: %v\n", err)
 					}
+					// Either not found or error - nothing to delete
+					return
+				}
+
+				// Get succeeded - now we can safely delete
+				if err := k8sClient.Delete(ctx, currentApp); err != nil {
+					GinkgoWriter.Printf("Warning: Failed to delete SparkApplication: %v\n", err)
+				} else {
+					GinkgoWriter.Printf("✓ SparkApplication deleted\n")
 				}
 			}
 		})
 
-		It("Should complete successfully", func() {
+		It("Should complete successfully", func(specCtx SpecContext) {
 			By("Waiting for SparkApplication to complete")
 			key := types.NamespacedName{Namespace: app.Namespace, Name: app.Name}
 
 			// Use the helper function to wait for completion
-			err := waitForSparkApplicationCompleted(ctx, key)
+			// specCtx will be cancelled after SpecTimeout, preventing hangs
+			err := waitForSparkApplicationCompleted(specCtx, key)
 
 			// If failed, get current status for debugging
 			if err != nil {
 				currentApp := &v1beta2.SparkApplication{}
-				if getErr := k8sClient.Get(ctx, key, currentApp); getErr == nil {
+				if getErr := k8sClient.Get(specCtx, key, currentApp); getErr == nil {
 					GinkgoWriter.Printf("❌ SparkApplication Status on failure:\n")
 					GinkgoWriter.Printf("   State: %s\n", currentApp.Status.AppState.State)
 					GinkgoWriter.Printf("   Error: %s\n", currentApp.Status.AppState.ErrorMessage)
@@ -225,7 +244,7 @@ var _ = Describe("OpenShift Spark Operator", func() {
 			GinkgoWriter.Printf("Driver pod name: %s\n", driverPodName)
 
 			// Get driver pod logs to verify execution
-			bytes, err := clientset.CoreV1().Pods(app.Namespace).GetLogs(driverPodName, &corev1.PodLogOptions{}).Do(ctx).Raw()
+			bytes, err := clientset.CoreV1().Pods(app.Namespace).GetLogs(driverPodName, &corev1.PodLogOptions{}).Do(specCtx).Raw()
 			if err != nil {
 				GinkgoWriter.Printf("Warning: Could not get driver logs: %v\n", err)
 			} else {
@@ -240,7 +259,7 @@ var _ = Describe("OpenShift Spark Operator", func() {
 			By("Verifying driver pod security context")
 			driverPod := &corev1.Pod{}
 			driverPodKey := types.NamespacedName{Namespace: app.Namespace, Name: driverPodName}
-			err = k8sClient.Get(ctx, driverPodKey, driverPod)
+			err = k8sClient.Get(specCtx, driverPodKey, driverPod)
 			if err == nil {
 				// Check that security contexts from the SparkApplication were applied
 				if driverPod.Spec.SecurityContext != nil {
@@ -253,6 +272,6 @@ var _ = Describe("OpenShift Spark Operator", func() {
 					}
 				}
 			}
-		})
+		}, SpecTimeout(10*time.Minute))
 	})
 })

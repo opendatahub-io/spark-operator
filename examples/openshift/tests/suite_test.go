@@ -72,7 +72,7 @@ import (
 // 2. Verifies fsGroup is NOT 185 (OpenShift security requirement)
 // 3. Runs the docling-spark-app workload
 //
-// Run with: go test ./test/e2e-openshift/ -v -ginkgo.v -timeout 30m
+// Run with: go test -tags=openshift ./examples/openshift/tests/ -v -ginkgo.v -timeout 30m
 //
 // ============================================================================
 

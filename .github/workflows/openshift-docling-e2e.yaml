@@ -67,7 +67,7 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6
 
       - name: Configure AWS Credentials
         uses: aws-actions/configure-aws-credentials@61815dcd50bd041e203e49132bacad1fd04d2708 # v5.1.1
@@ -136,7 +136,7 @@ jobs:
       # Step 1: Checkout the repository
       # ======================================================================
       - name: Checkout source code
-        uses: actions/checkout@v6
+        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6
         with:
           fetch-depth: 0
 
@@ -144,7 +144,7 @@ jobs:
       # Step 2: Set up Go
       # ======================================================================
       - name: Set up Go
-        uses: actions/setup-go@v6
+        uses: actions/setup-go@4dc6199c7b1a012772edbd06daecab0f50c9053c # v6
         with:
           go-version-file: go.mod
 
@@ -161,6 +161,7 @@ jobs:
       # ======================================================================
       - name: Install dependencies
         run: |
+          set -eou pipefail
           echo "Installing Docker CE..."
           # Install required packages
           sudo yum install -y yum-utils
