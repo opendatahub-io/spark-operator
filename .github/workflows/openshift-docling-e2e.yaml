@@ -301,10 +301,10 @@ jobs:
           kubectl apply -f examples/openshift/tests/docling-input-pvc-kind.yaml
           kubectl apply -f examples/openshift/tests/docling-output-pvc-kind.yaml
           
-          # Wait for PVCs to be bound
-          echo "Waiting for PVCs to be ready..."
-          kubectl wait --for=jsonpath='{.status.phase}'=Bound pvc/docling-input -n docling-spark --timeout=120s
-          kubectl wait --for=jsonpath='{.status.phase}'=Bound pvc/docling-output -n docling-spark --timeout=120s
+          # Note: Kind uses WaitForFirstConsumer, so PVCs won't bind until a Pod uses them
+          # The upload step below will trigger binding when it creates the helper pod
+          echo "PVCs created (will bind when first consumer pod is created):"
+          kubectl get pvc -n docling-spark
           
           echo "PVC status:"
           kubectl get pvc -n docling-spark
