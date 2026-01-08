@@ -280,7 +280,42 @@ jobs:
           helm search repo opendatahub-spark-operator
 
       # ======================================================================
-      # Step 9: Run OpenShift E2E tests
+      # Step 9: Setup PVCs and upload test PDFs
+      # Creates namespace, PVCs, and uploads test PDF files before tests run
+      # ======================================================================
+      - name: Setup PVCs and upload test PDFs
+        run: |
+          echo "Setting up PVCs and uploading test data..."
+          
+          # Create namespace first (BeforeSuite will see it already exists - idempotent)
+          echo "Creating namespace..."
+          kubectl apply -f examples/openshift/k8s/base/namespace.yaml
+          kubectl get namespace docling-spark
+          
+          # Note: RBAC is applied by BeforeSuite in the Go tests, no need to do it here
+          
+          # Create input and output PVCs
+          echo "Creating PVCs..."
+          kubectl apply -f examples/openshift/k8s/docling-input-pvc.yaml
+          kubectl apply -f examples/openshift/k8s/docling-output-pvc.yaml
+          
+          # Wait for PVCs to be bound (may take a moment in Kind)
+          echo "Waiting for PVCs to be ready..."
+          kubectl wait --for=jsonpath='{.status.phase}'=Bound pvc/docling-input -n docling-spark --timeout=60s || true
+          kubectl wait --for=jsonpath='{.status.phase}'=Bound pvc/docling-output -n docling-spark --timeout=60s || true
+          
+          echo "PVC status:"
+          kubectl get pvc -n docling-spark
+          
+          # Upload test PDFs using deploy.sh
+          echo "Uploading test PDFs from examples/openshift/tests/assets/..."
+          chmod +x examples/openshift/k8s/deploy.sh
+          cd examples/openshift && ./k8s/deploy.sh upload ./tests/assets/
+          
+          echo "✅ PVCs created and test PDFs uploaded successfully!"
+
+      # ======================================================================
+      # Step 10: Run OpenShift E2E tests
       # ======================================================================
       - name: Run OpenShift E2E tests
         run: |
@@ -298,7 +333,7 @@ jobs:
             -timeout 30m
 
       # ======================================================================
-      # Step 10: Collect logs on failure
+      # Step 11: Collect logs on failure
       # ======================================================================
       - name: Collect logs on failure
         if: failure()
@@ -335,7 +370,7 @@ jobs:
           kubectl get events -A --sort-by='.lastTimestamp' | tail -50
 
       # ======================================================================
-      # Step 11: Cleanup Kind cluster
+      # Step 12: Cleanup Kind cluster
       # ======================================================================
       - name: Cleanup Kind cluster
         if: always()
