@@ -320,6 +320,9 @@ jobs:
       # Step 10: Run OpenShift E2E tests
       # ======================================================================
       - name: Run OpenShift E2E tests
+        env:
+          # Skip namespace cleanup so we can download results after tests
+          SKIP_NAMESPACE_CLEANUP: "true"
         run: |
           echo "Running OpenShift E2E tests..."
           echo "These tests will:"
@@ -380,7 +383,20 @@ jobs:
           echo "✅ Results verification complete!"
 
       # ======================================================================
-      # Step 12: Collect logs on failure
+      # Step 12: Cleanup namespaces
+      # Since we skipped namespace cleanup in tests (SKIP_NAMESPACE_CLEANUP=true),
+      # we clean them up here after downloading results
+      # ======================================================================
+      - name: Cleanup namespaces
+        if: always()
+        run: |
+          echo "Cleaning up namespaces..."
+          kubectl delete namespace docling-spark --ignore-not-found --wait=false || true
+          kubectl delete namespace spark-operator-openshift --ignore-not-found --wait=false || true
+          echo "✅ Namespace cleanup initiated"
+
+      # ======================================================================
+      # Step 13: Collect logs on failure
       # ======================================================================
       - name: Collect logs on failure
         if: failure()
@@ -417,7 +433,7 @@ jobs:
           kubectl get events -A --sort-by='.lastTimestamp' | tail -50
 
       # ======================================================================
-      # Step 13: Cleanup Kind cluster
+      # Step 14: Cleanup Kind cluster
       # ======================================================================
       - name: Cleanup Kind cluster
         if: always()
