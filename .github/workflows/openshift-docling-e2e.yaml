@@ -352,12 +352,14 @@ jobs:
           
           echo ""
           echo "=== Results ==="
-          LINE_COUNT=$(wc -l < ../../output/results.jsonl 2>/dev/null || echo "0")
-          echo "results.jsonl: $LINE_COUNT lines"
           
-          echo ""
-          echo "=== Sample (first document) ==="
-          head -n 1 ../../output/results.jsonl | python3 -c "
+          if [ -s ../../output/results.jsonl ]; then
+            LINE_COUNT=$(wc -l < ../../output/results.jsonl)
+            echo "results.jsonl: $LINE_COUNT lines"
+            
+            echo ""
+            echo "=== Sample (first document) ==="
+            head -n 1 ../../output/results.jsonl | python3 -c "
           import sys,json,re
           d=json.load(sys.stdin)
           print(f'Document: {d[\"document_path\"]}')
@@ -368,9 +370,14 @@ jobs:
           print(f'Content length: {len(content)} chars')
           print(f'Content preview (first 500 chars):\n{content[:500]}...')
           "
-          
-          echo ""
-          echo "✅ Download complete!"
+            echo ""
+            echo "✅ Download complete!"
+          else
+            echo "❌ ERROR: results.jsonl is empty or missing"
+            echo "Output directory contents:"
+            ls -la ../../output/ 2>/dev/null || echo "  Output directory does not exist"
+            exit 1
+          fi
 
       # ======================================================================
       # Step 12: Cleanup namespaces
