@@ -357,7 +357,17 @@ jobs:
           
           echo ""
           echo "=== Sample (first document) ==="
-          head -n 1 ../../output/results.jsonl | python3 -c "import sys,json; d=json.load(sys.stdin); print(f'Document: {d[\"document_path\"]}'); print(f'Success: {d[\"success\"]}'); print(f'Content length: {len(d[\"content\"])} chars')"
+          head -n 1 ../../output/results.jsonl | python3 -c "
+          import sys,json,re
+          d=json.load(sys.stdin)
+          print(f'Document: {d[\"document_path\"]}')
+          print(f'Success: {d[\"success\"]}')
+          content = d.get('content', '')
+          # Remove base64 images
+          content = re.sub(r'!\[Image\]\(data:image/[^)]+\)', '[IMAGE]', content)
+          print(f'Content length: {len(content)} chars')
+          print(f'Content preview (first 500 chars):\n{content[:500]}...')
+          "
           
           echo ""
           echo "✅ Download complete!"
