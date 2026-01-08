@@ -295,14 +295,16 @@ jobs:
           # Note: RBAC is applied by BeforeSuite in the Go tests, no need to do it here
           
           # Create input and output PVCs
-          echo "Creating PVCs..."
-          kubectl apply -f examples/openshift/k8s/docling-input-pvc.yaml
-          kubectl apply -f examples/openshift/k8s/docling-output-pvc.yaml
+          # Note: Using Kind-specific PVC files (no storageClassName, uses Kind's default 'standard')
+          # The original PVCs use gp3-csi which is only available on AWS/OpenShift
+          echo "Creating PVCs (using Kind's default StorageClass)..."
+          kubectl apply -f examples/openshift/tests/docling-input-pvc-kind.yaml
+          kubectl apply -f examples/openshift/tests/docling-output-pvc-kind.yaml
           
-          # Wait for PVCs to be bound (may take a moment in Kind)
+          # Wait for PVCs to be bound
           echo "Waiting for PVCs to be ready..."
-          kubectl wait --for=jsonpath='{.status.phase}'=Bound pvc/docling-input -n docling-spark --timeout=60s || true
-          kubectl wait --for=jsonpath='{.status.phase}'=Bound pvc/docling-output -n docling-spark --timeout=60s || true
+          kubectl wait --for=jsonpath='{.status.phase}'=Bound pvc/docling-input -n docling-spark --timeout=120s
+          kubectl wait --for=jsonpath='{.status.phase}'=Bound pvc/docling-output -n docling-spark --timeout=120s
           
           echo "PVC status:"
           kubectl get pvc -n docling-spark

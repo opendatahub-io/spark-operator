@@ -1,0 +1,18 @@
+# PersistentVolumeClaim for Spark output data (results) - Kind version
+# Uses Kind's default StorageClass instead of gp3-csi (AWS/OpenShift)
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: docling-output
+  namespace: docling-spark
+  labels:
+    app: docling-spark
+    purpose: spark-output
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 1Gi
+  # No storageClassName specified - uses Kind's default 'standard' StorageClass
+
