@@ -295,11 +295,11 @@ jobs:
           # Note: RBAC is applied by BeforeSuite in the Go tests, no need to do it here
           
           # Create input and output PVCs
-          # Note: Using Kind-specific PVC files (no storageClassName, uses Kind's default 'standard')
-          # The original PVCs use gp3-csi which is only available on AWS/OpenShift
+          # Transform production PVCs by removing storageClassName (gp3-csi is AWS/OpenShift only)
+          # This keeps k8s/*.yaml as single source of truth - no duplicate Kind-specific files
           echo "Creating PVCs (using Kind's default StorageClass)..."
-          kubectl apply -f examples/openshift/tests/docling-input-pvc-kind.yaml
-          kubectl apply -f examples/openshift/tests/docling-output-pvc-kind.yaml
+          sed '/storageClassName:/d' examples/openshift/k8s/docling-input-pvc.yaml | kubectl apply -f -
+          sed '/storageClassName:/d' examples/openshift/k8s/docling-output-pvc.yaml | kubectl apply -f -
           
           # Note: Kind uses WaitForFirstConsumer, so PVCs won't bind until a Pod uses them
           # The upload step below will trigger binding when it creates the helper pod
@@ -335,7 +335,52 @@ jobs:
             -timeout 30m
 
       # ======================================================================
-      # Step 11: Collect logs on failure
+      # Step 11: Download and verify results
+      # ======================================================================
+      - name: Download and verify results
+        if: success()
+        run: |
+          echo "Downloading results from output PVC..."
+          mkdir -p ./output
+          
+          cd examples/openshift
+          chmod +x k8s/deploy.sh
+          ./k8s/deploy.sh download ../../output/
+          
+          echo ""
+          echo "=== Verifying results ==="
+          
+          # Check file exists
+          if [ ! -f ../../output/results.jsonl ]; then
+            echo "❌ ERROR: results.jsonl not found!"
+            exit 1
+          fi
+          
+          # Check file has content
+          LINE_COUNT=$(wc -l < ../../output/results.jsonl)
+          echo "✅ results.jsonl exists with $LINE_COUNT lines"
+          
+          # Check it's valid JSONL (each line is valid JSON)
+          echo "Validating JSONL format..."
+          if head -n 5 ../../output/results.jsonl | while read line; do
+            echo "$line" | python3 -m json.tool > /dev/null 2>&1 || exit 1
+          done; then
+            echo "✅ JSONL format is valid"
+          else
+            echo "❌ ERROR: Invalid JSONL format"
+            exit 1
+          fi
+          
+          # Show sample of results
+          echo ""
+          echo "=== Sample results (first 3 lines) ==="
+          head -n 3 ../../output/results.jsonl | python3 -m json.tool 2>/dev/null || head -n 3 ../../output/results.jsonl
+          
+          echo ""
+          echo "✅ Results verification complete!"
+
+      # ======================================================================
+      # Step 12: Collect logs on failure
       # ======================================================================
       - name: Collect logs on failure
         if: failure()
@@ -372,7 +417,7 @@ jobs:
           kubectl get events -A --sort-by='.lastTimestamp' | tail -50
 
       # ======================================================================
-      # Step 12: Cleanup Kind cluster
+      # Step 13: Cleanup Kind cluster
       # ======================================================================
       - name: Cleanup Kind cluster
         if: always()
