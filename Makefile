@@ -283,6 +283,38 @@ deploy: helm manifests update-crd kind-load-image ## Deploy controller to the K8
 undeploy: helm ## Uninstall spark-operator
 	$(HELM) uninstall spark-operator
 
+##@ OpenShift Tests
+
+.PHONY: openshift-test-setup
+openshift-test-setup: kind helm ## Setup Kind cluster for OpenShift e2e tests.
+	@echo "Setting up Kind cluster for OpenShift tests..."
+	chmod +x examples/openshift/tests/setup-kind-cluster.sh
+	PATH="$(LOCALBIN):$(PATH)" examples/openshift/tests/setup-kind-cluster.sh
+
+.PHONY: openshift-test-setup-full
+openshift-test-setup-full: kind helm ## Setup Kind cluster with docling image and test assets.
+	@echo "Setting up Kind cluster with full docling setup..."
+	chmod +x examples/openshift/tests/setup-kind-cluster.sh
+	PATH="$(LOCALBIN):$(PATH)" examples/openshift/tests/setup-kind-cluster.sh --with-docling --upload-assets
+
+.PHONY: openshift-test-cleanup
+openshift-test-cleanup: kind ## Cleanup Kind cluster and OpenShift test resources.
+	@echo "Cleaning up OpenShift test environment..."
+	chmod +x examples/openshift/tests/cleanup-kind-cluster.sh
+	PATH="$(LOCALBIN):$(PATH)" examples/openshift/tests/cleanup-kind-cluster.sh
+
+.PHONY: openshift-test
+openshift-test: ## Run OpenShift e2e Go tests (requires setup first).
+	@echo "Running OpenShift e2e tests..."
+	go test -tags=openshift ./examples/openshift/tests/ -v -ginkgo.v -timeout 30m
+
+.PHONY: openshift-test-shell
+openshift-test-shell: ## Run OpenShift shell script tests (requires setup first).
+	@echo "Running OpenShift shell script tests..."
+	chmod +x examples/openshift/tests/test-operator-install.sh examples/openshift/tests/test-spark-pi.sh
+	CLEANUP=false examples/openshift/tests/test-operator-install.sh
+	examples/openshift/tests/test-spark-pi.sh
+
 ##@ Dependencies
 
 $(LOCALBIN):
@@ -302,6 +334,7 @@ $(CONTROLLER_GEN): $(LOCALBIN)
 kind: $(KIND) ## Download kind locally if necessary.
 $(KIND): $(LOCALBIN)
 	$(call go-install-tool,$(KIND),sigs.k8s.io/kind,$(KIND_VERSION))
+	ln -sf $(notdir $(KIND)) $(LOCALBIN)/kind
 
 .PHONY: envtest
 envtest: $(ENVTEST) ## Download setup-envtest locally if necessary.
