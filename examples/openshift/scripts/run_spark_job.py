@@ -38,14 +38,16 @@ def get_result_schema() -> StructType:
     
     Think of it like a form template:
     - Checkbox: Did it succeed? (True/False)
-    - Text box: What's the content? (Text)
+    - Text box: What's the content? (Text - Markdown format)
+    - Text box: JSON content (Text - Docling JSON format for docling serve)
     - Dictionary: Extra information (Key-Value pairs)
     - Text box: Error message if failed (Text)
     - Text box: Which file was it? (Text)
     """
     return StructType([
         StructField("success", BooleanType(), nullable=False),        # Required
-        StructField("content", StringType(), nullable=True),          # Optional
+        StructField("content", StringType(), nullable=True),          # Optional (Markdown)
+        StructField("json_content", StringType(), nullable=True),     # Optional (JSON for docling serve)
         StructField("metadata", MapType(StringType(), StringType()), nullable=True),  # Optional
         StructField("error_message", StringType(), nullable=True),    # Optional
         StructField("file_path", StringType(), nullable=False),       # Required
@@ -152,7 +154,9 @@ def main():
     """
     parser = argparse.ArgumentParser(description="Docling Spark Job")
     parser.add_argument("--input-dir", help="Directory containing input PDFs", default=None)
-    parser.add_argument("--output-file", help="Path to output JSONL file", default=None)
+    parser.add_argument("--output-dir", help="Directory for output files (markdown and jsonl per PDF)", default=None)
+    # Keep legacy --output-file for backward compatibility
+    parser.add_argument("--output-file", help="(Legacy) Path to combined output JSONL file", default=None)
     args = parser.parse_args()
     
     print("\n" + "="*70)
@@ -162,11 +166,16 @@ def main():
     # ========== STEP 1: Create Spark ==========
     spark = create_spark()
     
-    # Define output_path
-    if args.output_file:
-        output_path = Path(args.output_file)
+    # Define output_dir (for separate files per PDF)
+    if args.output_dir:
+        output_dir = Path(args.output_dir)
     else:
-        output_path = Path(__file__).parent.parent / "output" / "results.jsonl"
+        output_dir = Path(__file__).parent.parent / "output"
+    
+    # Legacy support: if --output-file is specified, extract directory from it
+    if args.output_file:
+        legacy_output_path = Path(args.output_file)
+        output_dir = legacy_output_path.parent
     
     try:
         # ========== STEP 2: Get list of PDF files ==========
@@ -237,7 +246,8 @@ def main():
         df_final = df_with_results.select(
             col("document_path"),
             col("result.success").alias("success"),
-            col("result.content").alias("content"),
+            col("result.content").alias("content"),           # Markdown content
+            col("result.json_content").alias("json_content"), # JSON content for docling serve
             to_json(col("result.metadata")).alias("metadata"), # <--- Convert Map to JSON String
             col("result.error_message").alias("error_message")
         ).cache()
@@ -277,26 +287,69 @@ def main():
         print("\n💡 Skipping detailed result display to prevent worker crashes.")
         print("Full results will be saved to the output file...")
         
-        # ========== STEP 8: Save results as JSONL ==========
-        print("\n💾 Step 6: Saving results to JSONL file...")
+        # ========== STEP 8: Save results - SEPARATE FILES PER PDF ==========
+        print("\n💾 Step 6: Saving results (separate files per PDF)...")
 
-        # Save as JSONL
-        output_path.parent.mkdir(parents=True, exist_ok=True)
+        # Create output directory
+        output_dir.mkdir(parents=True, exist_ok=True)
+        print(f"Output directory: {output_dir}")
         print("Collecting data to driver to write locally...")
         
         # Convert to Pandas
-        pdf = df_final.toPandas()
+        pdf_df = df_final.toPandas()
         
-        # Write to JSONL using Pandas
-        pdf.to_json(output_path, orient='records', lines=True, force_ascii=False)
-
-        print(f"✅ Results saved to: {output_path}")
+        # Save separate files for each PDF
+        import json as json_lib
+        for idx, row in pdf_df.iterrows():
+            # Get base filename from the original PDF path
+            original_path = Path(row['document_path'])
+            base_name = original_path.stem  # filename without extension
+            
+            if row['success']:
+                # 1. Save Markdown file
+                markdown_path = output_dir / f"{base_name}.md"
+                with open(markdown_path, 'w', encoding='utf-8') as f:
+                    f.write(row['content'] if row['content'] else "")
+                print(f"   ✅ Markdown saved: {markdown_path.name}")
+                
+                # 2. Save JSONL file (docling format for docling serve)
+                jsonl_path = output_dir / f"{base_name}.json"
+                with open(jsonl_path, 'w', encoding='utf-8') as f:
+                    f.write(row['json_content'] if row['json_content'] else "{}")
+                print(f"   ✅ JSON saved: {jsonl_path.name}")
+                
+                # 3. Save metadata as separate file
+                metadata_path = output_dir / f"{base_name}_metadata.json"
+                with open(metadata_path, 'w', encoding='utf-8') as f:
+                    # metadata is already a JSON string from to_json()
+                    metadata = json_lib.loads(row['metadata']) if row['metadata'] else {}
+                    metadata['source_file'] = str(original_path)
+                    metadata['success'] = True
+                    json_lib.dump(metadata, f, indent=2, ensure_ascii=False)
+                print(f"   ✅ Metadata saved: {metadata_path.name}")
+            else:
+                # Save error information for failed files
+                error_path = output_dir / f"{base_name}_error.json"
+                with open(error_path, 'w', encoding='utf-8') as f:
+                    error_info = {
+                        'source_file': str(original_path),
+                        'success': False,
+                        'error_message': row['error_message']
+                    }
+                    json_lib.dump(error_info, f, indent=2, ensure_ascii=False)
+                print(f"   ❌ Error saved: {error_path.name}")
+        
+        # Also save a combined summary JSONL for reference
+        summary_path = output_dir / "summary.jsonl"
+        summary_df = pdf_df[['document_path', 'success', 'metadata', 'error_message']].copy()
+        summary_df.to_json(summary_path, orient='records', lines=True, force_ascii=False)
+        print(f"\n   📋 Summary saved: {summary_path}")
+        
+        print(f"\n✅ All results saved to: {output_dir}")
         print("\n🎉 ALL DONE!")
         print("✅ Enhanced processing complete!")
-        print("\n📦 Results are stored on the output PVC.")
-        print("   To download: ./k8s/deploy.sh download ./output/")
-
-        spark.stop()
+        print("\n📥 To download results from PVC:")
+        print("   ./k8s/deploy.sh download ./output/")
         
     except Exception as e:
         print(f"\n❌ ERROR: {e}")

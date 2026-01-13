@@ -14,10 +14,14 @@ USER root
 RUN apt-get update && apt-get install -y \
     tesseract-ocr \
     tesseract-ocr-eng \
+    libtesseract-dev \
+    libleptonica-dev \
     poppler-utils \
     libgomp1 \
     libglib2.0-0 \
     libgl1 \
+    pkg-config \
+    g++ \
     && rm -rf /var/lib/apt/lists/*
 
 # --- OpenShift Arbitrary UID Compatibility ---

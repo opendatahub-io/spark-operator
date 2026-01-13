@@ -9,15 +9,15 @@ spec:
   type: Python
   pythonVersion: "3"
   mode: cluster
-  image: quay.io/rishasin/docling-spark:latest
+  image: quay.io/rishasin/docling-spark:multi-output
   imagePullPolicy: Always
   timeToLiveSeconds: 60  # Pod cleanup delay (results persist on PVC)
   mainApplicationFile: local:///app/scripts/run_spark_job.py
   arguments:
     - "--input-dir"
     - "/app/assets"
-    - "--output-file"
-    - "/app/output/results.jsonl"
+    - "--output-dir"
+    - "/app/output"
   sparkVersion: "3.5.7"
   restartPolicy:
     type: Never

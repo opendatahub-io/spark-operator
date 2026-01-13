@@ -172,7 +172,7 @@ spec:
   type: Python
   pythonVersion: "3"
   mode: cluster
-  image: quay.io/rishasin/docling-spark:latest
+  image: quay.io/rishasin/docling-spark:multi-output
   imagePullPolicy: Always
   mainApplicationFile: local:///app/scripts/run_spark_job.py
   arguments:
