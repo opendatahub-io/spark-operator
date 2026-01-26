@@ -1,3 +1,5 @@
+# Service exposes the webhook server so the Kubernetes API server can send admission requests to it.
+# The API server connects to this service when pods or SparkApplications are created/updated.
 apiVersion: v1
 kind: Service
 metadata:
