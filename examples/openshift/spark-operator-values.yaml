@@ -18,5 +18,5 @@ webhook:
 
 spark:
   jobNamespaces:
-    - docling-spark  # Specify namespaces where Spark jobs can run
+    - spark-operator  # Specify namespaces where Spark jobs can run
   # Note: Leave the array empty (jobNamespaces: []) to watch all namespaces

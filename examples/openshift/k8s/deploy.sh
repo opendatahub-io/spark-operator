@@ -1,9 +1,11 @@
 #!/bin/bash
 # k8s/deploy.sh - Deploys Docling + PySpark
+#
+# This script deploys the docling-spark job in the SAME namespace as the operator.
+# By default, it uses spark-operator (config/default/).
 
 set -e
-NAMESPACE="docling-spark"
-# TODO: Add SERVICE_ACCOUNT when implementing least-privilege RBAC for Spark jobs
+NAMESPACE="${NAMESPACE:-spark-operator}"
 INPUT_PVC="docling-input"
 OUTPUT_PVC="docling-output"
 # Use full UBI image (not minimal) because oc cp requires tar
@@ -89,54 +91,61 @@ cmd_deploy() {
     echo "=============================================="
     echo "  Deploying Docling + PySpark"
     echo "=============================================="
+    echo "  Namespace: $NAMESPACE"
+    echo "=============================================="
 
-    # Step 1: Create Namespace
+    # Step 1: Verify namespace exists (should be created by operator installation)
     echo ""
-    log_info "1. Ensuring namespace exists..."
-    $CLI apply -f "$SCRIPT_DIR/base/namespace.yaml"
+    log_info "1. Verifying namespace exists..."
+    if ! $CLI get namespace "$NAMESPACE" &> /dev/null; then
+        log_error "Namespace '$NAMESPACE' does not exist!"
+        echo "   Please install the operator first:"
+        echo "   oc apply -k config/default/ --server-side=true"
+        exit 1
+    fi
+    log_success "Namespace '$NAMESPACE' exists"
     # For oc users, also switch to the project context
     if [ "$CLI" == "oc" ]; then
         oc project $NAMESPACE
     fi
 
-    # Step 2: Create RBAC
+    # Step 2: Create PVCs (only if they don't exist)
     echo ""
-    log_info "2. Creating RBAC (ServiceAccount, Role, RoleBinding)..."
-    $CLI apply -f "$SCRIPT_DIR/base/rbac.yaml"
-
-    # Step 3: Create PVCs (only if they don't exist)
-    echo ""
-    log_info "3. Ensuring PVCs exist..."
+    log_info "2. Ensuring PVCs exist..."
+    # Update PVC namespace dynamically using sed
     if ! $CLI get pvc "$INPUT_PVC" -n "$NAMESPACE" &> /dev/null; then
-        $CLI apply -f "$SCRIPT_DIR/docling-input-pvc.yaml"
+        sed "s/namespace: spark-operator/namespace: $NAMESPACE/" "$SCRIPT_DIR/docling-input-pvc.yaml" | $CLI apply -f -
     else
         log_info "PVC '$INPUT_PVC' already exists"
     fi
     if ! $CLI get pvc "$OUTPUT_PVC" -n "$NAMESPACE" &> /dev/null; then
-        $CLI apply -f "$SCRIPT_DIR/docling-output-pvc.yaml"
+        sed "s/namespace: spark-operator/namespace: $NAMESPACE/" "$SCRIPT_DIR/docling-output-pvc.yaml" | $CLI apply -f -
     else
         log_info "PVC '$OUTPUT_PVC' already exists"
     fi
 
-    # Step 4: Install ValidatingAdmissionPolicy (Requires cluster admin)
+    # Step 3: Install ValidatingAdmissionPolicy (Requires cluster admin)
     echo ""
-    echo "4. Installing ValidatingAdmissionPolicy (optional)..."
+    echo "3. Installing ValidatingAdmissionPolicy (optional)..."
     if [ "$CLI" == "oc" ]; then
         if oc auth can-i create validatingadmissionpolicies --all-namespaces &> /dev/null; then
             echo "   Installing policy to prevent fsGroup in SparkApplications..."
-            $CLI apply -f k8s/base/validating-admission-policy.yaml
-            $CLI apply -f k8s/base/validating-admission-policy-binding.yaml
+            $CLI apply -f "$SCRIPT_DIR/base/validating-admission-policy.yaml"
+            $CLI apply -f "$SCRIPT_DIR/base/validating-admission-policy-binding.yaml"
             echo "   ✅ Policy installed"
         else
             echo "   ⚠️  Skipping (requires cluster-admin). Install manually if needed."
         fi
     fi
 
-    # Step 5: Submit Spark Application
+    # Step 4: Submit Spark Application
     echo ""
-    echo "5. Submitting Spark Application..."
-    # Use replace --force to ensure the job is restarted if it already exists
-    $CLI replace --force -f k8s/docling-spark-app.yaml || $CLI create -f k8s/docling-spark-app.yaml
+    echo "4. Submitting Spark Application..."
+    # Update namespace and apply - use sed to replace namespace dynamically
+    sed "s/namespace: spark-operator/namespace: $NAMESPACE/" "$SCRIPT_DIR/docling-spark-app.yaml" | \
+        $CLI replace --force -f - || \
+        sed "s/namespace: spark-operator/namespace: $NAMESPACE/" "$SCRIPT_DIR/docling-spark-app.yaml" | \
+        $CLI create -f -
 
     echo ""
     log_success "Deployment complete!"
@@ -168,13 +177,17 @@ cmd_upload() {
         exit 1
     fi
     
-    # Ensure namespace exists
-    $CLI apply -f "$SCRIPT_DIR/base/namespace.yaml"
+    # Verify namespace exists
+    if ! $CLI get namespace "$NAMESPACE" &> /dev/null; then
+        log_error "Namespace '$NAMESPACE' does not exist!"
+        echo "   Please install the operator first."
+        exit 1
+    fi
     
     # Check if PVC exists
     if ! $CLI get pvc "$INPUT_PVC" -n "$NAMESPACE" &> /dev/null; then
         log_info "Creating input PVC..."
-        $CLI apply -f "$SCRIPT_DIR/docling-input-pvc.yaml"
+        sed "s/namespace: spark-operator/namespace: $NAMESPACE/" "$SCRIPT_DIR/docling-input-pvc.yaml" | $CLI apply -f -
     fi
     
     echo ""
@@ -291,12 +304,16 @@ show_usage() {
     echo "  cleanup          Remove helper pods"
     echo ""
     echo "Workflow:"
-    echo "  1. Upload PDFs:  $0 upload ./my-pdfs/"
-    echo "  2. Run job:      $0                    (creates PVCs, RBAC, and submits SparkApplication)"
-    echo "  3. View logs:    oc logs -f docling-spark-job-driver -n docling-spark"
-    echo "  4. Delete job:   oc delete sparkapplication docling-spark-job -n docling-spark"
-    echo "  5. Download:     $0 download ./results/"
+    echo "  1. Install operator: oc apply -k config/default/ --server-side=true"
+    echo "  2. Upload PDFs:      $0 upload ./my-pdfs/"
+    echo "  3. Run job:          $0"
+    echo "  4. View logs:        oc logs -f docling-spark-job-driver -n $NAMESPACE"
+    echo "  5. Delete job:       oc delete sparkapplication docling-spark-job -n $NAMESPACE"
+    echo "  6. Download:         $0 download ./results/"
     echo ""
+    echo "Examples:"
+    echo "  # Default (spark-operator namespace)"
+    echo "  ./k8s/deploy.sh"
 }
 
 # =============================================================================

@@ -19,15 +19,15 @@ set -euo pipefail
 # ============================================================================
 # Configuration
 # ============================================================================
-RELEASE_NAME="${RELEASE_NAME:-spark-operator-openshift}"
-RELEASE_NAMESPACE="${RELEASE_NAMESPACE:-spark-operator-openshift}"
+RELEASE_NAME="${RELEASE_NAME:-spark-operator}"
+RELEASE_NAMESPACE="${RELEASE_NAMESPACE:-spark-operator}"
 HELM_REPO_NAME="${HELM_REPO_NAME:-opendatahub-spark-operator}"
 HELM_REPO_URL="${HELM_REPO_URL:-https://opendatahub-io.github.io/spark-operator}"
 CHART_NAME="${CHART_NAME:-spark-operator}"
 TIMEOUT="${TIMEOUT:-5m}"
 
-# Expected jobNamespaces (docling-spark namespace for our tests)
-EXPECTED_JOB_NAMESPACE="${EXPECTED_JOB_NAMESPACE:-docling-spark}"
+# Expected jobNamespaces (spark-operator namespace for our tests)
+EXPECTED_JOB_NAMESPACE="${EXPECTED_JOB_NAMESPACE:-spark-operator}"
 
 # ============================================================================
 # Helper Functions

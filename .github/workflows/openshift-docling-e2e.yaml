@@ -290,7 +290,7 @@ jobs:
           # Create namespace first (BeforeSuite will see it already exists - idempotent)
           echo "Creating namespace..."
           kubectl apply -f examples/openshift/k8s/base/namespace.yaml
-          kubectl get namespace docling-spark
+          kubectl get namespace spark-operator
           
           # Note: RBAC is applied by BeforeSuite in the Go tests, no need to do it here
           
@@ -304,10 +304,10 @@ jobs:
           # Note: Kind uses WaitForFirstConsumer, so PVCs won't bind until a Pod uses them
           # The upload step below will trigger binding when it creates the helper pod
           echo "PVCs created (will bind when first consumer pod is created):"
-          kubectl get pvc -n docling-spark
+          kubectl get pvc -n spark-operator
           
           echo "PVC status:"
-          kubectl get pvc -n docling-spark
+          kubectl get pvc -n spark-operator
           
           # Upload test PDFs using deploy.sh
           echo "Uploading test PDFs from examples/openshift/tests/assets/..."
@@ -388,8 +388,7 @@ jobs:
         if: always()
         run: |
           echo "Cleaning up namespaces..."
-          kubectl delete namespace docling-spark --ignore-not-found --wait=false || true
-          kubectl delete namespace spark-operator-openshift --ignore-not-found --wait=false || true
+          kubectl delete namespace spark-operator --ignore-not-found --wait=false || true
           echo "✅ Namespace cleanup initiated"
 
       # ======================================================================
@@ -403,27 +402,27 @@ jobs:
 
           echo ""
           echo "=== Spark Operator Logs ==="
-          kubectl logs -n spark-operator-openshift -l app.kubernetes.io/name=spark-operator --tail=100 || true
+          kubectl logs -n spark-operator -l app.kubernetes.io/name=spark-operator --tail=100 || true
 
           echo ""
-          echo "=== Docling Namespace Pods ==="
-          kubectl get pods -n docling-spark -o wide || true
+          echo "=== Spark Operator Namespace Pods ==="
+          kubectl get pods -n spark-operator -o wide || true
 
           echo ""
           echo "=== Driver Pod Details ==="
-          kubectl describe pod -n docling-spark -l spark-role=driver || true
+          kubectl describe pod -n spark-operator -l spark-role=driver || true
 
           echo ""
           echo "=== Driver Pod Logs ==="
-          kubectl logs -n docling-spark -l spark-role=driver --tail=100 || true
+          kubectl logs -n spark-operator -l spark-role=driver --tail=100 || true
 
           echo ""
           echo "=== SparkApplication Status ==="
           kubectl get sparkapplication -A -o yaml || true
 
           echo ""
-          echo "=== Events in docling-spark namespace ==="
-          kubectl get events -n docling-spark --sort-by='.lastTimestamp' || true
+          echo "=== Events in spark-operator namespace ==="
+          kubectl get events -n spark-operator --sort-by='.lastTimestamp' || true
 
           echo ""
           echo "=== All Recent Events ==="

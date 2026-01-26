@@ -1,17 +1,21 @@
 # Docling-Spark Application for OpenShift (PVC-based Storage)
+#
+# IMPORTANT: Update namespace and serviceAccount based on your deployment:
+#   - config/default/:        namespace=spark-operator, serviceAccount=spark-operator-spark
+
 
 apiVersion: "sparkoperator.k8s.io/v1beta2"
 kind: SparkApplication
 metadata:
   name: docling-spark-job
-  namespace: docling-spark
+  namespace: spark-operator
 spec:
   type: Python
   pythonVersion: "3"
   mode: cluster
   image: quay.io/rishasin/docling-spark:latest
   imagePullPolicy: Always
-  timeToLiveSeconds: 60  # Pod cleanup delay (results persist on PVC)
+  timeToLiveSeconds: 300  # Pod cleanup delay (results persist on PVC)
   mainApplicationFile: local:///app/scripts/run_spark_job.py
   arguments:
     - "--input-dir"
@@ -39,7 +43,7 @@ spec:
     memory: "4g"
     labels:
       version: 3.5.7
-    serviceAccount: spark-driver
+    serviceAccount: spark-operator-spark
     securityContext: {}
     volumeMounts:
       - name: input-data

@@ -1,9 +1,12 @@
 # PersistentVolumeClaim for Spark output data (results)
+# IMPORTANT: Update namespace based on your deployment:
+#   - config/default/:        namespace=spark-operator
+
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
   name: docling-output
-  namespace: docling-spark
+  namespace: spark-operator
   labels:
     app: docling-spark
     purpose: spark-output
