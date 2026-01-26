@@ -96,7 +96,7 @@ Ensure your registry is accessible from the OpenShift cluster and that `imagePul
 To confirm the container is running with a random non-root UID:
 
 ```bash
-oc exec -n docling-spark <POD_NAME> -- id
+oc exec -n spark-operator <POD_NAME> -- id
 ```
 
 Expected output should show a high UID number (e.g., `uid=1000840000`) and `gid=0(root)`.

@@ -91,4 +91,4 @@ jobs:
           
           echo ""
           echo "=== Operator logs ==="
-          kubectl logs -n spark-operator-openshift -l app.kubernetes.io/name=spark-operator --tail=100 2>/dev/null || echo "No operator logs"
+          kubectl logs -n spark-operator -l app.kubernetes.io/name=spark-operator --tail=100 2>/dev/null || echo "No operator logs"

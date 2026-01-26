@@ -78,15 +78,15 @@ import (
 
 const (
 	// Release configuration
-	ReleaseName      = "spark-operator-openshift"
-	ReleaseNamespace = "spark-operator-openshift"
+	ReleaseName      = "spark-operator"
+	ReleaseNamespace = "spark-operator"
 
-	// Namespace for SparkApplications (the operator will watch this namespace)
-	DoclingNamespace = "docling-spark"
+	// Namespace for SparkApplications (same as operator namespace)
+	DoclingNamespace = "spark-operator"
 
 	// Webhook names (must match what the chart creates: {{ fullname }}-webhook)
-	MutatingWebhookName   = "spark-operator-openshift-webhook"
-	ValidatingWebhookName = "spark-operator-openshift-webhook"
+	MutatingWebhookName   = "spark-operator-webhook"
+	ValidatingWebhookName = "spark-operator-webhook"
 
 	// Custom Helm repository
 	HelmRepoName = "opendatahub-spark-operator"
@@ -286,7 +286,7 @@ func installChartFromRepo() {
 	chart, err := loader.Load(chartPath)
 	Expect(err).NotTo(HaveOccurred(), "Failed to load chart from: %s", chartPath)
 
-	// Configure operator to watch the docling-spark namespace
+	// Configure operator to watch the spark-operator namespace
 	vals := map[string]interface{}{
 		"spark": map[string]interface{}{
 			"jobNamespaces": []string{DoclingNamespace},

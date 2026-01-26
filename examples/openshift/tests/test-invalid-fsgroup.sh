@@ -19,7 +19,7 @@
 #   ./test-invalid-fsgroup.sh
 #
 # Environment Variables:
-#   APP_NAMESPACE     - Namespace to deploy app (default: docling-spark)
+#   APP_NAMESPACE     - Namespace to deploy app (default: spark-operator)
 #   SKIP_CLEANUP      - Set to "true" to preserve resources for debugging
 #
 # ============================================================================
@@ -31,7 +31,7 @@ set -euo pipefail
 # ============================================================================
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-APP_NAMESPACE="${APP_NAMESPACE:-docling-spark}"
+APP_NAMESPACE="${APP_NAMESPACE:-spark-operator}"
 APP_NAME="${APP_NAME:-test-invalid-fsgroup}"
 TEST_YAML="${TEST_YAML:-$SCRIPT_DIR/invalid-fsgroup.yaml}"
 POLICY_NAME="${POLICY_NAME:-deny-fsgroup-in-sparkapplication}"
@@ -67,10 +67,8 @@ trap cleanup EXIT
 log "Running pre-flight checks..."
 
 # Check if operator is installed
-if ! kubectl get deployment -n spark-operator-openshift -l app.kubernetes.io/name=spark-operator &>/dev/null; then
-    if ! kubectl get deployment -n kubeflow-spark-operator -l app.kubernetes.io/name=spark-operator &>/dev/null; then
-        fail "Spark Operator not found. Run test-operator-install.sh first."
-    fi
+if ! kubectl get deployment -n spark-operator -l app.kubernetes.io/name=spark-operator &>/dev/null; then
+    fail "Spark Operator not found. Run test-operator-install.sh first."
 fi
 echo "  Spark Operator: Found"
 

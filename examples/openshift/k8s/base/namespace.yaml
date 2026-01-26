@@ -1,8 +1,9 @@
 # k8s/base/namespace.yaml
+# Note: This namespace is created by `oc apply -k config/default/`
+# This file is only needed if applying k8s/base/ independently
 apiVersion: v1
 kind: Namespace
 metadata:
-  name: docling-spark
+  name: spark-operator
   labels:
-    app: docling-spark
-    environment: production
+    app: spark-operator

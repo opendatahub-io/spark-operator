@@ -1,0 +1,30 @@
+# Kustomization for optional custom RBAC resources.
+# This creates an optional custom spark-driver ServiceAccount with additional
+# permissions (pods/log, secrets) beyond what spark-operator-spark provides.
+#
+# Usage: kubectl apply -k examples/openshift/k8s/base/
+#
+# Note: This is OPTIONAL. The operator installation (config/default/) already
+# creates a spark-operator-spark ServiceAccount which is sufficient for most use cases.
+# Only use this if you need the additional permissions defined in rbac.yaml.
+
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+resources:
+  # Job namespace
+  - namespace.yaml
+  
+  # RBAC for Spark driver (custom ServiceAccount)
+  - rbac.yaml
+  
+  # ValidatingAdmissionPolicy to prevent fsGroup in SparkApplications (optional)
+  # Uncomment these if you have cluster-admin access and want to enforce fsGroup restrictions
+  # - validating-admission-policy.yaml
+  # - validating-admission-policy-binding.yaml
+
+# Common labels for all resources
+labels:
+  - pairs:
+      app.kubernetes.io/managed-by: kustomize
+    includeSelectors: false
