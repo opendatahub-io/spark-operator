@@ -16,7 +16,7 @@ name: OpenShift Spark Pi E2E
 on:
   push:
     branches:
-      - odh
+      - main
     paths:
       - 'examples/openshift/**'
       - '.github/workflows/openshift-spark-pi-e2e.yaml'
