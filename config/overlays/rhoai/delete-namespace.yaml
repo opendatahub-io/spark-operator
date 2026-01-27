@@ -1,5 +1,5 @@
 # Remove the Namespace resource from the output.
-# The redhat-ods-operator namespace is managed by the RHOAI operator, not by us.
+# The redhat-ods-applications namespace is managed by the RHOAI operator, not by us.
 $patch: delete
 apiVersion: v1
 kind: Namespace
