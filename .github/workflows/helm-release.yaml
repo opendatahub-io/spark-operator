@@ -3,7 +3,7 @@ name: Release Spark Operator Charts
 on:
  push:
     branches:
-      - odh
+      - main
     paths:
       - charts/spark-operator-chart/Chart.yaml
       - charts/spark-operator-chart/values.yaml
