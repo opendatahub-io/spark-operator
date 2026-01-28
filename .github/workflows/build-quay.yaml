@@ -14,7 +14,7 @@ concurrency:
 
 env:
   REGISTRY: quay.io
-  IMAGE_NAME: quay.io/opendatahub-io/spark-operator
+  IMAGE_NAME: quay.io/opendatahub/spark-operator
   SPARK_OPERATOR_TAG: ${{ github.event.inputs.tag }}
 
 jobs:
