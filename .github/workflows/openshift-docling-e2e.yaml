@@ -251,7 +251,7 @@ jobs:
       # ======================================================================
       - name: Pre-pull and load docling-spark image
         env:
-          DOCLING_IMAGE: quay.io/rishasin/docling-spark@sha256:0c5bbbe9a612db823d01711d739469c8cbddfad810d5034ddf275fde0006cb87
+          DOCLING_IMAGE: quay.io/rishasin/docling-spark@sha256:7e8431fc89dbc6c10aec1f0401aadd9c9cd66b9728fbcb98f6bf40ba3e3b4cdb
         run: |
           echo "Pulling docling-spark image (~9.5GB, this may take a while)..."
           docker pull $DOCLING_IMAGE
@@ -339,6 +339,12 @@ jobs:
 
       # ======================================================================
       # Step 11: Download and show results
+      # Multi-output format produces per-PDF files:
+      #   - {name}.md          (markdown content)
+      #   - {name}.json        (docling JSON format)
+      #   - {name}_metadata.json (processing metadata)
+      #   - {name}_error.json  (for failed PDFs)
+      #   - summary.jsonl      (combined summary)
       # ======================================================================
       - name: Download and show results
         if: success()
@@ -351,31 +357,91 @@ jobs:
           ./k8s/deploy.sh download ../../output/
           
           echo ""
-          echo "=== Results ==="
+          echo "=== Output Directory Contents ==="
+          ls -la ../../output/
           
-          if [ -s ../../output/results.jsonl ]; then
-            LINE_COUNT=$(wc -l < ../../output/results.jsonl)
-            echo "results.jsonl: $LINE_COUNT lines"
-            
+          # Count different file types
+          MD_COUNT=$(find ../../output/ -maxdepth 1 -name "*.md" 2>/dev/null | wc -l | tr -d ' ')
+          JSON_COUNT=$(find ../../output/ -maxdepth 1 -name "*.json" ! -name "*_error.json" ! -name "*_metadata.json" 2>/dev/null | wc -l | tr -d ' ')
+          METADATA_COUNT=$(find ../../output/ -maxdepth 1 -name "*_metadata.json" 2>/dev/null | wc -l | tr -d ' ')
+          ERROR_COUNT=$(find ../../output/ -maxdepth 1 -name "*_error.json" 2>/dev/null | wc -l | tr -d ' ')
+          
+          echo ""
+          echo "=== File Summary ==="
+          echo "Markdown files (.md):       $MD_COUNT"
+          echo "JSON files (.json):         $JSON_COUNT"
+          echo "Metadata files:             $METADATA_COUNT"
+          echo "Error files (*_error.json): $ERROR_COUNT"
+          
+          # Check summary.jsonl
+          if [ -s ../../output/summary.jsonl ]; then
+            LINE_COUNT=$(wc -l < ../../output/summary.jsonl | tr -d ' ')
             echo ""
-            echo "=== Sample (first document) ==="
-            head -n 1 ../../output/results.jsonl | python3 -c "
-          import sys,json,re
-          d=json.load(sys.stdin)
-          print(f'Document: {d[\"document_path\"]}')
-          print(f'Success: {d[\"success\"]}')
-          content = d.get('content', '')
-          # Remove base64 images
-          content = re.sub(r'!\[Image\]\(data:image/[^)]+\)', '[IMAGE]', content)
-          print(f'Content length: {len(content)} chars')
-          print(f'Content preview (first 500 chars):\n{content[:500]}...')
+            echo "=== Processing Summary (summary.jsonl: $LINE_COUNT documents) ==="
+            python3 -c "
+          import sys, json
+          success_count = 0
+          fail_count = 0
+          for line in open('../../output/summary.jsonl'):
+              d = json.loads(line.strip())
+              doc_path = d.get('document_path', 'unknown')
+              # Extract just filename
+              doc_name = doc_path.split('/')[-1] if '/' in doc_path else doc_path
+              if d.get('success', False):
+                  print(f'  ✅ {doc_name}')
+                  success_count += 1
+              else:
+                  error_msg = d.get('error_message', 'Unknown error')
+                  # Truncate long error messages
+                  if error_msg and len(error_msg) > 80:
+                      error_msg = error_msg[:77] + '...'
+                  print(f'  ❌ {doc_name}: {error_msg}')
+                  fail_count += 1
+          print(f'\nTotal: {success_count} succeeded, {fail_count} failed')
           "
+          fi
+          
+          # Show sample markdown if any exist
+          if [ "$MD_COUNT" -gt 0 ]; then
             echo ""
-            echo "✅ Download complete!"
+            echo "=== Sample Markdown Output ==="
+            FIRST_MD=$(find ../../output/ -maxdepth 1 -name "*.md" | head -1)
+            echo "File: $(basename $FIRST_MD)"
+            echo "Size: $(wc -c < "$FIRST_MD" | tr -d ' ') bytes"
+            echo "Preview (first 500 chars):"
+            echo "---"
+            head -c 500 "$FIRST_MD"
+            echo ""
+            echo "---"
+          fi
+          
+          # Show error details if any failures
+          if [ "$ERROR_COUNT" -gt 0 ]; then
+            echo ""
+            echo "=== Error Details ==="
+            for err_file in ../../output/*_error.json; do
+              if [ -f "$err_file" ]; then
+                echo "File: $(basename $err_file)"
+                python3 -c "
+          import json
+          with open('$err_file') as f:
+              d = json.load(f)
+              print(f'  Source: {d.get(\"source_file\", \"unknown\")}')
+              err = d.get('error_message', 'No error message')
+              if len(err) > 200:
+                  err = err[:197] + '...'
+              print(f'  Error: {err}')
+          "
+              fi
+            done
+          fi
+          
+          # Determine success/failure
+          echo ""
+          if [ -s ../../output/summary.jsonl ]; then
+            echo "✅ Download complete! Found $MD_COUNT markdown, $JSON_COUNT JSON, $ERROR_COUNT error files."
           else
-            echo "❌ ERROR: results.jsonl is empty or missing"
-            echo "Output directory contents:"
-            ls -la ../../output/ 2>/dev/null || echo "  Output directory does not exist"
+            echo "❌ ERROR: summary.jsonl is empty or missing"
             exit 1
           fi
 

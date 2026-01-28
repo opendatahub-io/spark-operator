@@ -24,13 +24,15 @@ class ProcessingResult:
     Encapsulates the result of document processing.
     Attributes:
     - success (bool): Whether the processing was successful.
-    - content (str): The processed content of the document.
+    - content (str): The processed content of the document (markdown format).
+    - json_content (str): The JSON content of the document (docling JSON format).
     - metadata (Dict): Additional metadata about the document.
     - error_message (Optional[str]): Error message if processing failed.
     - file_path (str): Original file path that was processed.
     """
     success: bool
     content: str
+    json_content: str
     metadata: Dict[str, Any]
     error_message: Optional[str]
     file_path: str
@@ -42,6 +44,7 @@ class ProcessingResult:
         return {
             "success": self.success,
             "content": self.content,
+            "json_content": self.json_content,
             "metadata": self.metadata,
             "error_message": self.error_message,
             "file_path": self.file_path,
@@ -57,12 +60,15 @@ class ProcessingResult:
 @dataclass
 class DocumentConfig:
     """
-    Configuration for document processing.
+    Configuration for document processing. OCR Engines available (when ocr_enabled=True):
+    - "rapidocr": Lightweight pure-Python OCR (recommended)
+    - "tesserocr": Fast C-binding for tesseract
+    - "tesseract": CLI wrapper via pytesseract
     """
     # Basic configuration options
     extract_tables: bool = True
     extract_images: bool = True
-    ocr_enabled: bool = False  # Disabled to avoid tesserocr dependency
+    ocr_enabled: bool = False  # Disabled by default for lightweight processing
     max_pages: Optional[int] = None
 
     # Advanced configuration options
@@ -71,8 +77,8 @@ class DocumentConfig:
     table_mode: str = "accurate"
     num_threads: int = 4  
     timeout_per_document: int = 300
-    ocr_engine: str = "tesseract"
-    force_ocr: bool = False  # Added missing field
+    ocr_engine: str = "rapidocr"  # Options: "rapidocr", "tesserocr", "tesseract"
+    force_ocr: bool = False
 
     # Enrichment options 
     enrich_code: bool = False  
@@ -80,7 +86,7 @@ class DocumentConfig:
     enrich_picture_classes: bool = False
     enrich_picture_description: bool = False
 
-    # Performance options
+    # Performance options (auto, cpu, gpu)
     accelerator_device: str = "cpu" 
 
 class DocumentProcessorInterface(ABC):
@@ -137,13 +143,11 @@ class DoclingPDFProcessor(DocumentProcessorInterface):
         pipeline_options.do_picture_classification = self._config.enrich_picture_classes
         pipeline_options.do_picture_description = self._config.enrich_picture_description
         
-        # Accelerator options
+        # Accelerator options (simplified: auto, cpu, gpu)
         device_map = {
             "auto": AcceleratorDevice.AUTO,
             "cpu": AcceleratorDevice.CPU,
-            "cuda": AcceleratorDevice.CUDA,
             "gpu": AcceleratorDevice.CUDA,
-            "mps": AcceleratorDevice.MPS,
         }
         device = device_map.get(self._config.accelerator_device.lower(), AcceleratorDevice.AUTO)
         
@@ -152,12 +156,30 @@ class DoclingPDFProcessor(DocumentProcessorInterface):
             device=device
         )
 
-        # OCR options
+        # OCR options - Multi-engine support
         if self._config.ocr_enabled:
-            from docling.datamodel.pipeline_options import TesseractOcrOptions
-            pipeline_options.ocr_options = TesseractOcrOptions(
-                force_full_page_ocr=self._config.force_ocr
-            )
+            engine = self._config.ocr_engine.lower()
+            
+            if engine == "rapidocr":
+                # Lightweight pure-Python OCR (recommended)
+                from docling.datamodel.pipeline_options import RapidOcrOptions
+                pipeline_options.ocr_options = RapidOcrOptions(
+                    force_full_page_ocr=self._config.force_ocr
+                )
+            elif engine == "tesserocr":
+                # Fast C-binding for tesseract
+                from docling.datamodel.pipeline_options import TesseractOcrOptions
+                pipeline_options.ocr_options = TesseractOcrOptions(
+                    force_full_page_ocr=self._config.force_ocr
+                )
+            elif engine == "tesseract":
+                # CLI wrapper via pytesseract
+                from docling.datamodel.pipeline_options import TesseractCliOcrOptions
+                pipeline_options.ocr_options = TesseractCliOcrOptions(
+                    force_full_page_ocr=self._config.force_ocr
+                )
+            else:
+                raise ValueError(f"Unknown OCR engine: {engine}. Supported: rapidocr, tesserocr, tesseract")
 
         # Create and return the converter 
         converter = DocumentConverter(
@@ -201,6 +223,7 @@ class DoclingPDFProcessor(DocumentProcessorInterface):
                 return ProcessingResult(
                     success=False,
                     content="",
+                    json_content="",
                     metadata={},
                     error_message="Invalid file",
                     file_path=file_path
@@ -210,9 +233,14 @@ class DoclingPDFProcessor(DocumentProcessorInterface):
             result = self._converter.convert(file_path)
 
             # Extract content using modern export methods
+            # 1. Markdown content
             markdown_content = result.document.export_to_markdown(
                 image_mode=ImageRefMode(self._config.image_export_mode)
             )
+            
+            # 2. JSON content (docling's native JSON format for docling serve)
+            json_content = result.document.export_to_dict()
+            json_content_str = json.dumps(json_content, ensure_ascii=False)
             
             # Extract metadata
             metadata = self._extract_metadata(result, file_path)
@@ -221,6 +249,7 @@ class DoclingPDFProcessor(DocumentProcessorInterface):
             return ProcessingResult(
                 success=True,
                 content=markdown_content,
+                json_content=json_content_str,
                 metadata=metadata,
                 error_message=None,
                 file_path=file_path
@@ -232,6 +261,7 @@ class DoclingPDFProcessor(DocumentProcessorInterface):
             return ProcessingResult(
                 success=False,
                 content="",
+                json_content="",
                 metadata={},
                 error_message=full_error,
                 file_path=file_path
@@ -312,11 +342,12 @@ class DocumentProcessorFactory:
     def create_processor_with_defaults() -> DoclingPDFProcessor:
         """
         Create a PDF document processor with default configuration.
+        OCR is disabled by default for lightweight processing.
         """
         default_config = DocumentConfig(
             extract_tables=True,
             extract_images=True,
-            ocr_enabled=True,
+            ocr_enabled=False,  # Disabled for lightweight processing
             force_ocr=False,
             pdf_backend="dlparse_v4",
             image_export_mode="embedded",
@@ -335,31 +366,106 @@ def docling_process(file_path: str, config: Optional[DocumentConfig] = None) -> 
     return processor.process(file_path)
 
 if __name__ == "__main__":
+    import argparse
+    
+    # =========================================================================
+    # CLI Argument Parsing
+    # =========================================================================
+    parser = argparse.ArgumentParser(
+        description="Docling PDF Processor - Convert PDFs to Markdown and JSON",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+Examples:
+  # Use default paths (tests/assets → tests/output)
+  python processor.py
+  
+  # Specify custom input and output directories
+  python processor.py --input-dir /path/to/pdfs --output-dir /path/to/output
+  
+  # Process specific directory with default output
+  python processor.py --input-dir ./my-pdfs
+        """
+    )
+    parser.add_argument(
+        "--input-dir", 
+        help="Directory containing PDF files to process (default: tests/assets)",
+        default=None
+    )
+    parser.add_argument(
+        "--output-dir", 
+        help="Directory for output files (default: tests/output)",
+        default=None
+    )
+    args = parser.parse_args()
+    
+    # Set paths from CLI or defaults
+    if args.input_dir:
+        assets_dir = Path(args.input_dir)
+    else:
+        assets_dir = Path(__file__).parent.parent.parent / "tests" / "assets"
+    
+    if args.output_dir:
+        output_base = Path(args.output_dir)
+    else:
+        output_base = Path(__file__).parent.parent.parent / "tests" / "output"
+    
+    print(f"\n📁 Input directory: {assets_dir}")
+    print(f"📁 Output directory: {output_base}\n")
+    
+    # Get first PDF for single-file examples
+    pdf_files = list(assets_dir.glob("*.pdf"))
+    if not pdf_files:
+        print(f"❌ No PDF files found in {assets_dir}")
+        exit(1)
+    pdf_path = pdf_files[0]
+    
+    # =========================================================================
     # Example 1: Using the simple function API (Facade)
+    # =========================================================================
     print("=" * 70)
     print("Example 1: Simple Function API")
     print("=" * 70)
     
-    assets_dir = Path(__file__).parent.parent.parent / "assets"
-    pdf_path = assets_dir / "2206.01062.pdf"
-    
     if pdf_path.exists():
         result = docling_process(str(pdf_path))
         print(result)
-        print(f"Content length: {len(result.content)} characters")
+        print(f"Markdown content length: {len(result.content)} characters")
+        print(f"JSON content length: {len(result.json_content)} characters")
         print(f"Metadata: {result.metadata}")
+        
+        # Save outputs for inspection
+        output_dir_ex1 = output_base / "example1"
+        output_dir_ex1.mkdir(parents=True, exist_ok=True)
+        
+        # Save markdown
+        md_path = output_dir_ex1 / f"{pdf_path.stem}.md"
+        md_path.write_text(result.content, encoding='utf-8')
+        print(f"✅ Markdown saved to: {md_path}")
+        
+        # Save JSON
+        json_path = output_dir_ex1 / f"{pdf_path.stem}.json"
+        json_path.write_text(result.json_content, encoding='utf-8')
+        print(f"✅ JSON saved to: {json_path}")
+        
+        # Save metadata
+        metadata_path = output_dir_ex1 / f"{pdf_path.stem}_metadata.json"
+        metadata_path.write_text(json.dumps(result.metadata, indent=2), encoding='utf-8')
+        print(f"✅ Metadata saved to: {metadata_path}")
     else:
         print(f"PDF file not found at: {pdf_path}")
     
+    # =========================================================================
+    # Example 2: Function API with Custom Config
+    # =========================================================================
     print("\n" + "=" * 70)
-    print("Example 2: Function API with Custom Config")
+    print("Example 2: Function API with Custom Config (no images)")
     print("=" * 70)
     
-    # Create custom configuration
+    # Create custom configuration (OCR disabled, no images for lightweight processing)
     custom_config = DocumentConfig(
         extract_tables=True,
         extract_images=False,
-        ocr_enabled=True
+        ocr_enabled=False
     )
     
     # Create processor using factory
@@ -370,34 +476,82 @@ if __name__ == "__main__":
         result = processor.process(str(pdf_path))
         print(f"Success: {result.success}")
         if result.success:
-            print(f"Extracted {len(result.content)} characters")
+            print(f"Extracted {len(result.content)} markdown characters")
+            print(f"Extracted {len(result.json_content)} JSON characters")
             print(f"Pages: {result.metadata.get('num_pages', 'N/A')}")
             print(f"Confidence: {result.metadata.get('confidence_score', 'N/A')}")
+            
+            # Save outputs for Example 2
+            output_dir_ex2 = output_base / "example2"
+            output_dir_ex2.mkdir(parents=True, exist_ok=True)
+            
+            md_path = output_dir_ex2 / f"{pdf_path.stem}_custom.md"
+            md_path.write_text(result.content, encoding='utf-8')
+            
+            json_path = output_dir_ex2 / f"{pdf_path.stem}_custom.json"
+            json_path.write_text(result.json_content, encoding='utf-8')
+            
+            metadata_path = output_dir_ex2 / f"{pdf_path.stem}_custom_metadata.json"
+            metadata_path.write_text(json.dumps(result.metadata, indent=2), encoding='utf-8')
+            
+            print(f"✅ Outputs saved to: {output_dir_ex2}")
         else:
             print(f"Error: {result.error_message}")
     else:
         print(f"PDF file not found at: {pdf_path}")
     
+    # =========================================================================
+    # Example 3: Batch Processing (All PDFs in Directory)
+    # =========================================================================
     print("\n" + "=" * 70)
-    print("Example 3: Batch Processing")
+    print("Example 3: Batch Processing (All PDFs in Directory)")
     print("=" * 70)
+    
+    # Create fresh processor for batch processing
+    batch_processor = DocumentProcessorFactory.create_pdf_processor()
     
     # Process all PDFs in directory
     if assets_dir.exists():
         try:
-            results = processor.process_directory(str(assets_dir))
+            results = batch_processor.process_directory(str(assets_dir))
             print(f"Processed {len(results)} files")
+            
+            # Save output for each processed file
+            output_dir_ex3 = output_base / "example3_batch"
+            output_dir_ex3.mkdir(parents=True, exist_ok=True)
+            
             for r in results:
                 print(f"  - {r}")
+                if r.success:
+                    base_name = Path(r.file_path).stem
+                    
+                    # Save markdown
+                    md_path = output_dir_ex3 / f"{base_name}.md"
+                    md_path.write_text(r.content, encoding='utf-8')
+                    
+                    # Save JSON
+                    json_path = output_dir_ex3 / f"{base_name}.json"
+                    json_path.write_text(r.json_content, encoding='utf-8')
+                    
+                    # Save metadata
+                    metadata_path = output_dir_ex3 / f"{base_name}_metadata.json"
+                    metadata_path.write_text(json.dumps(r.metadata, indent=2), encoding='utf-8')
+                    
+                    print(f"    ✅ Saved: {base_name}.md, {base_name}.json, {base_name}_metadata.json")
+            
+            print(f"\n✅ All batch outputs saved to: {output_dir_ex3}")
         except ValueError as e:
             print(f"Directory processing error: {e}")
     else:
         print(f"Assets directory not found at: {assets_dir}")
     
+    # =========================================================================
+    # Summary
+    # =========================================================================
     print("\n" + "=" * 70)
-    print("Example 4: Using Factory with Defaults")
+    print("Summary")
     print("=" * 70)
-    
-    # Test the factory method with defaults
-    default_processor = DocumentProcessorFactory.create_processor_with_defaults()
-    print(f"Default config: {default_processor.get_config()}")
+    print(f"📁 All outputs saved to: {output_base}")
+    print(f"   ├── example1/       (single file, full config)")
+    print(f"   ├── example2/       (single file, custom config)")
+    print(f"   └── example3_batch/ (all {len(pdf_files)} PDFs)")
