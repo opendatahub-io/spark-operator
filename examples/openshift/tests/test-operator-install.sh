@@ -1,16 +1,17 @@
 #!/bin/bash
 # This test verifies:
-#   1. Spark Operator installs successfully from the Helm chart
-#   2. fsGroup is NOT 185 (OpenShift security requirement)
-#   3. jobNamespaces is configured correctly
+#   1. Spark Operator installs successfully from Kustomize manifests
+#   2. No operator pods have fsGroup=185
+#   3. Container runs with non-root UID
 #
 # Usage:
 #   ./test-operator-install.sh           # Install, test, and cleanup
 #   CLEANUP=false ./test-operator-install.sh  # Keep operator for subsequent tests
 #
 # Prerequisites:
-#   - kubectl configured with cluster access
-#   - helm installed
+#   - kubectl (or oc if OPENSHIFT=true) configured with cluster access
+#   - Cluster Admin privileges
+#   - Git repository cloned
 #
 # ============================================================================
 
@@ -19,15 +20,19 @@ set -exuo pipefail
 # ============================================================================
 # Configuration
 # ============================================================================
-RELEASE_NAME="${RELEASE_NAME:-spark-operator}"
+# Use oc instead of kubectl when running on OpenShift
+if [ "${OPENSHIFT:-false}" = "true" ]; then
+    CLI="oc"
+else
+    CLI="kubectl"
+fi
+
 RELEASE_NAMESPACE="${RELEASE_NAMESPACE:-spark-operator}"
-HELM_REPO_NAME="${HELM_REPO_NAME:-opendatahub-spark-operator}"
-HELM_REPO_URL="${HELM_REPO_URL:-https://opendatahub-io.github.io/spark-operator}"
-CHART_NAME="${CHART_NAME:-spark-operator}"
 TIMEOUT="${TIMEOUT:-5m}"
 
-# Expected jobNamespaces (spark-operator namespace for our tests)
-EXPECTED_JOB_NAMESPACE="${EXPECTED_JOB_NAMESPACE:-spark-operator}"
+# Get the repository root (relative to this script's location)
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(cd "$SCRIPT_DIR/../../.." && pwd)"
 
 # ============================================================================
 # Helper Functions
@@ -42,11 +47,10 @@ cleanup() {
     # Set CLEANUP=false to keep operator for subsequent tests
     if [ "${CLEANUP:-true}" = "true" ]; then
         log "Cleaning up..."
-        helm uninstall "$RELEASE_NAME" -n "$RELEASE_NAMESPACE" --wait 2>/dev/null || true
-        kubectl delete namespace "$RELEASE_NAMESPACE" --ignore-not-found --wait=false || true
+        $CLI delete -k "$REPO_ROOT/config/default/" 2>/dev/null || true
     else
         log "Keeping operator installed (CLEANUP=false)"
-        log "To cleanup manually: helm uninstall $RELEASE_NAME -n $RELEASE_NAMESPACE"
+        log "To cleanup manually: $CLI delete -k $REPO_ROOT/config/default/"
     fi
 }
 
@@ -56,56 +60,53 @@ trap cleanup EXIT
 # ============================================================================
 # Setup: Install Spark Operator
 # ============================================================================
-log "Adding Helm repository: $HELM_REPO_URL"
-if ! helm repo add "$HELM_REPO_NAME" "$HELM_REPO_URL" 2>/dev/null; then
-    # Repo add failed - check if it already exists
-    if helm repo list | grep -q "^$HELM_REPO_NAME"; then
-        log "Helm repo '$HELM_REPO_NAME' already exists (OK)"
-    else
-        fail "Failed to add Helm repo: $HELM_REPO_URL"
-    fi
-fi
-helm repo update
-
-log "Creating job namespace: $EXPECTED_JOB_NAMESPACE"
-kubectl create namespace "$EXPECTED_JOB_NAMESPACE" --dry-run=client -o yaml | kubectl apply -f -
-
-log "Installing Spark Operator..."
-log "  Release:   $RELEASE_NAME"
+log "Installing Spark Operator using Kustomize manifests..."
 log "  Namespace: $RELEASE_NAMESPACE"
-log "  Chart:     $HELM_REPO_NAME/$CHART_NAME"
-log "  Job Namespace: $EXPECTED_JOB_NAMESPACE"
+log "  Manifests: $REPO_ROOT/config/default/"
 
-helm install "$RELEASE_NAME" "$HELM_REPO_NAME/$CHART_NAME" \
-    --namespace "$RELEASE_NAMESPACE" \
-    --create-namespace \
-    --set "spark.jobNamespaces={$EXPECTED_JOB_NAMESPACE}" \
-    --wait \
-    --timeout "$TIMEOUT"
+# Note: --server-side=true is required because the CRDs are large and exceed
+# Kubernetes annotation size limits for client-side apply.
+$CLI apply -k "$REPO_ROOT/config/default/" --server-side=true
 
-pass "Spark Operator installed successfully"
+pass "Spark Operator manifests applied successfully"
 
 # ============================================================================
 # Wait for pods to be ready
 # ============================================================================
 log "Waiting for operator pods to be ready..."
-kubectl wait --for=condition=Ready pod \
-    -l app.kubernetes.io/instance="$RELEASE_NAME" \
+
+# Wait for deployments to be available
+$CLI wait --for=condition=Available deployment \
+    -l app.kubernetes.io/name=spark-operator \
+    -n "$RELEASE_NAMESPACE" \
+    --timeout="$TIMEOUT"
+
+pass "All operator deployments are available"
+
+# ============================================================================
+# Test 1: Verify Installation
+# ============================================================================
+log "TEST 1: Verifying operator pods are running..."
+
+# Check that controller and webhook pods exist and are running
+PODS=$($CLI get pods -n "$RELEASE_NAMESPACE" -l app.kubernetes.io/name=spark-operator -o name 2>/dev/null)
+
+if [ -z "$PODS" ]; then
+    fail "No operator pods found with label app.kubernetes.io/name=spark-operator"
+fi
+
+# Wait for all pods to be ready
+$CLI wait --for=condition=Ready pod \
+    -l app.kubernetes.io/name=spark-operator \
     -n "$RELEASE_NAMESPACE" \
     --timeout=120s
 
-pass "All operator pods are ready"
-
-# ============================================================================
-# Capture Pod Names (for use in all tests)
-# ============================================================================
-log "Capturing operator pod names..."
-
-CONTROLLER_POD=$(kubectl get pods -n "$RELEASE_NAMESPACE" \
+# Verify expected pods are running
+CONTROLLER_POD=$($CLI get pods -n "$RELEASE_NAMESPACE" \
     -l app.kubernetes.io/component=controller \
     -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || echo "")
 
-WEBHOOK_POD=$(kubectl get pods -n "$RELEASE_NAMESPACE" \
+WEBHOOK_POD=$($CLI get pods -n "$RELEASE_NAMESPACE" \
     -l app.kubernetes.io/component=webhook \
     -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || echo "")
 
@@ -116,13 +117,15 @@ fi
 echo "  Controller: $CONTROLLER_POD"
 echo "  Webhook:    ${WEBHOOK_POD:-not found}"
 
+pass "TEST 1 PASSED: Operator pods are running"
+
 # ============================================================================
-# Test 1: Verify fsGroup is NOT 185
+# Test 2: Verify fsGroup is NOT 185
 # ============================================================================
-log "TEST 1: Checking fsGroup on operator pods..."
+log "TEST 2: Checking fsGroup on operator pods..."
 
 # Check controller pod
-FSGROUP=$(kubectl get pod "$CONTROLLER_POD" -n "$RELEASE_NAMESPACE" \
+FSGROUP=$($CLI get pod "$CONTROLLER_POD" -n "$RELEASE_NAMESPACE" \
     -o jsonpath='{.spec.securityContext.fsGroup}' 2>/dev/null || echo "")
 if [ "$FSGROUP" = "185" ]; then
     fail "Pod $CONTROLLER_POD has fsGroup=185 (not allowed for OpenShift)"
@@ -134,35 +137,47 @@ fi
 
 # Check webhook pod (if exists)
 if [ -n "$WEBHOOK_POD" ]; then
-    FSGROUP=$(kubectl get pod "$WEBHOOK_POD" -n "$RELEASE_NAMESPACE" \
-        -o jsonpath='{.spec.securityContext.fsGroup}' 2>/dev/null || echo "")
-    if [ "$FSGROUP" = "185" ]; then
-        fail "Pod $WEBHOOK_POD has fsGroup=185 (not allowed for OpenShift)"
-    elif [ -z "$FSGROUP" ] || [ "$FSGROUP" = "null" ]; then
-        echo "  $WEBHOOK_POD: fsGroup not set (OK for OpenShift)"
-    else
-        echo "  $WEBHOOK_POD: fsGroup=$FSGROUP (OK)"
-    fi
+  FSGROUP=$($CLI get pod "$WEBHOOK_POD" -n "$RELEASE_NAMESPACE" \
+      -o jsonpath='{.spec.securityContext.fsGroup}' 2>/dev/null || echo "")
+  if [ "$FSGROUP" = "185" ]; then
+      fail "Pod $WEBHOOK_POD has fsGroup=185 (not allowed for OpenShift)"
+  elif [ -z "$FSGROUP" ] || [ "$FSGROUP" = "null" ]; then
+      echo "  $WEBHOOK_POD: fsGroup not set (OK for OpenShift)"
+  else
+      echo "  $WEBHOOK_POD: fsGroup=$FSGROUP (OK)"
+  fi
 fi
 
-pass "TEST 1 PASSED: No operator pods have fsGroup=185"
+pass "TEST 2 PASSED: No operator pods have fsGroup=185"
 
 # ============================================================================
-# Test 2: Verify jobNamespaces configuration
+# Test 3: Verify container runs with non-root UID
 # ============================================================================
-log "TEST 2: Checking jobNamespaces configuration..."
+log "TEST 3: Verifying container runs with non-root UID..."
 
-# Get the --namespaces argument from the controller
-NAMESPACES_ARG=$(kubectl get pod "$CONTROLLER_POD" -n "$RELEASE_NAMESPACE" \
-    -o jsonpath='{.spec.containers[0].args}' | jq -r '.[] | select(startswith("--namespaces="))')
+# Get the UID from the controller pod
+UID_OUTPUT=$($CLI exec -n "$RELEASE_NAMESPACE" "$CONTROLLER_POD" -- id 2>/dev/null || echo "")
 
-echo "  Configured namespaces: $NAMESPACES_ARG"
-
-if echo "$NAMESPACES_ARG" | grep -q "$EXPECTED_JOB_NAMESPACE"; then
-    pass "TEST 2 PASSED: jobNamespaces includes '$EXPECTED_JOB_NAMESPACE'"
-else
-    fail "TEST 2 FAILED: jobNamespaces does not include '$EXPECTED_JOB_NAMESPACE' (found: $NAMESPACES_ARG)"
+if [ -z "$UID_OUTPUT" ]; then
+    fail "Could not execute 'id' command in controller pod"
 fi
+
+echo "  Container identity: $UID_OUTPUT"
+
+# Extract the UID number
+CONTAINER_UID=$(echo "$UID_OUTPUT" | grep -o 'uid=[0-9]*' | cut -d= -f2)
+
+if [ -z "$CONTAINER_UID" ]; then
+    fail "Could not parse UID from output"
+fi
+
+if [ "$CONTAINER_UID" = "0" ]; then
+    fail "Container is running as root (uid=0)"
+fi
+
+echo "  Container UID: $CONTAINER_UID (non-root, OK)"
+
+pass "TEST 3 PASSED: Container runs with non-root UID"
 
 # ============================================================================
 # Summary
@@ -172,10 +187,14 @@ echo "============================================"
 pass "ALL OPERATOR INSTALL TESTS PASSED!"
 echo "============================================"
 echo ""
+echo "This creates:"
+echo "  - Operator namespace with controller and webhook deployments"
+echo "  - 3 CRDs (SparkApplication, ScheduledSparkApplication, SparkConnect)"
+echo "  - Comprehensive RBAC configuration"
+echo "  - Spark job ServiceAccount for driver pods"
+echo ""
 echo "Operator will be cleaned up on exit (default behavior)."
 echo ""
 echo "To keep operator for subsequent tests, run with:"
 echo "  CLEANUP=false ./test-operator-install.sh"
-echo "  ./test-spark-pi.sh      # Then run Spark Pi test"
 echo ""
-
