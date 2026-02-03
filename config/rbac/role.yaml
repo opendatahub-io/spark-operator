@@ -24,6 +24,16 @@ rules:
   verbs:
   - get
 - resources:
+  - persistentvolumeclaims
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- resources:
   - pods
   verbs:
   - create
@@ -86,6 +96,7 @@ rules:
   resources:
   - scheduledsparkapplications/finalizers
   - sparkapplications/finalizers
+  - sparkconnects/finalizers
   verbs:
   - update
 - apiGroups:
