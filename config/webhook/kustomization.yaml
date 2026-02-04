@@ -12,9 +12,74 @@ resources:
   - rolebinding.yaml
   - service.yaml
   - deployment.yaml
-  - mutatingwebhookconfiguration.yaml
-  - validatingwebhookconfiguration.yaml
+  - manifests.yaml
+
+# Patches for features not expressible in kubebuilder annotations
+patches:
+  # Rename MutatingWebhookConfiguration
+  - patch: |-
+      - op: replace
+        path: /metadata/name
+        value: webhook
+    target:
+      kind: MutatingWebhookConfiguration
+
+  # Rename ValidatingWebhookConfiguration
+  - patch: |-
+      - op: replace
+        path: /metadata/name
+        value: webhook
+    target:
+      kind: ValidatingWebhookConfiguration
+
+  # Patch MutatingWebhookConfiguration webhooks (3 webhooks: pod, scheduledsparkapplication, sparkapplication)
+  - patch: |-
+      - op: add
+        path: /webhooks/0/objectSelector
+        value:
+          matchLabels:
+            sparkoperator.k8s.io/launched-by-spark-operator: "true"
+      - op: add
+        path: /webhooks/0/timeoutSeconds
+        value: 10
+      - op: replace
+        path: /webhooks/0/clientConfig/service/name
+        value: spark-operator-webhook-svc
+      - op: add
+        path: /webhooks/1/timeoutSeconds
+        value: 10
+      - op: replace
+        path: /webhooks/1/clientConfig/service/name
+        value: spark-operator-webhook-svc
+      - op: add
+        path: /webhooks/2/timeoutSeconds
+        value: 10
+      - op: replace
+        path: /webhooks/2/clientConfig/service/name
+        value: spark-operator-webhook-svc
+    target:
+      kind: MutatingWebhookConfiguration
+      name: mutating-webhook-configuration
+
+  # Patch ValidatingWebhookConfiguration webhooks (2 webhooks: scheduledsparkapplication, sparkapplication)
+  - patch: |-
+      - op: add
+        path: /webhooks/0/timeoutSeconds
+        value: 10
+      - op: replace
+        path: /webhooks/0/clientConfig/service/name
+        value: spark-operator-webhook-svc
+      - op: add
+        path: /webhooks/1/timeoutSeconds
+        value: 10
+      - op: replace
+        path: /webhooks/1/clientConfig/service/name
+        value: spark-operator-webhook-svc
+    target:
+      kind: ValidatingWebhookConfiguration
+      name: validating-webhook-configuration
 
 # Configuration for transforming webhook namespace references
 configurations:
   - kustomizeconfig.yaml
+  

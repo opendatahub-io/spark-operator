@@ -114,6 +114,7 @@ func NewReconciler(
 // +kubebuilder:rbac:groups=,resources=nodes,verbs=get
 // +kubebuilder:rbac:groups=,resources=events,verbs=create;update;patch
 // +kubebuilder:rbac:groups=,resources=resourcequotas,verbs=get;list;watch
+// +kubebuilder:rbac:groups=,resources=persistentvolumeclaims,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=extensions,resources=ingresses,verbs=get;list;watch;create;update;delete
 // +kubebuilder:rbac:groups=networking.k8s.io,resources=ingresses,verbs=get;list;watch;create;update;delete
 // +kubebuilder:rbac:groups=apiextensions.k8s.io,resources=customresourcedefinitions,verbs=get
