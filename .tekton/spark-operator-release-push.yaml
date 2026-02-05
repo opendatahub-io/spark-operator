@@ -23,7 +23,7 @@ spec:
   - name: revision
     value: '{{revision}}'
   - name: output-image
-    value: quay.io/opendatahub/spark-operator:sparkKonfluxBuild
+    value: quay.io/opendatahub/spark-operator:v2.4.0
   - name: dockerfile
     value: Dockerfile
   pipelineSpec:
