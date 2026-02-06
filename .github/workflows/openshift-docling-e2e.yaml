@@ -37,6 +37,7 @@ on:
       - main
     paths:
       - 'examples/openshift/**'
+      - 'config/**'
       - '.github/workflows/openshift-docling-e2e.yaml'
 
 env:

@@ -19,6 +19,7 @@ on:
       - main
     paths:
       - 'examples/openshift/**'
+      - 'config/**'
       - '.github/workflows/openshift-spark-pi-e2e.yaml'
   pull_request:
     paths:
