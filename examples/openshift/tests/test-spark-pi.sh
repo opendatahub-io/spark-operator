@@ -19,11 +19,12 @@
 #
 # Usage:
 #   ./test-spark-pi.sh
+#   CLEANUP=false ./test-spark-pi.sh   # Keep resources for debugging
 #
 # Environment Variables:
 #   APP_NAMESPACE     - Namespace to deploy app (default: spark-operator)
-#   TIMEOUT_SECONDS   - Max wait time for completion (default: 300)
-#   SKIP_CLEANUP      - Set to "true" to preserve resources for debugging
+#   TIMEOUT_SECONDS   - Max wait time for completion (default: 600)
+#   CLEANUP           - Set to "false" to preserve resources for debugging (default: true)
 #
 # ============================================================================
 
@@ -47,8 +48,8 @@ fail() { echo "❌ $1"; exit 1; }
 warn() { echo "⚠️  $1"; }
 
 cleanup() {
-    if [ "${SKIP_CLEANUP:-false}" = "true" ]; then
-        warn "SKIP_CLEANUP=true, leaving resources for inspection"
+    if [ "${CLEANUP:-true}" = "false" ]; then
+        warn "CLEANUP=false, leaving resources for inspection"
         echo ""
         echo "To inspect:"
         echo "  kubectl get sparkapplication $APP_NAME -n $APP_NAMESPACE -o yaml"

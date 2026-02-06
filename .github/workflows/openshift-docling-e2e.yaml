@@ -218,21 +218,21 @@ jobs:
           df -h
 
       # ======================================================================
-      # Step 5: Create a Kind cluster
-      # This creates a local Kubernetes cluster using Docker containers
+      # Step 5: Create Kind cluster using make target
+      # Uses the standardized setup script via Makefile
       # ======================================================================
       - name: Create Kind cluster
         env:
           K8S_VERSION: ${{ inputs.k8s_version || 'v1.30.8' }}
+          KIND_KUBE_CONFIG: ${{ env.KUBECONFIG }}
         run: |
           echo "Creating Kind cluster with Kubernetes ${K8S_VERSION}..."
-          kind create cluster \
-            --name spark-operator \
-            --config charts/spark-operator-chart/ci/kind-config.yaml \
-            --image kindest/node:${K8S_VERSION} \
-            --kubeconfig $KUBECONFIG \
-            --wait=1m
+          # Use the setup script directly (make target needs bin/ setup)
+          chmod +x examples/openshift/tests/setup-kind-cluster.sh
+          K8S_VERSION=${K8S_VERSION} KIND_KUBE_CONFIG=${KIND_KUBE_CONFIG} \
+            examples/openshift/tests/setup-kind-cluster.sh
           
+          echo ""
           echo "Kubeconfig written to: $KUBECONFIG"
           kubectl cluster-info
 
@@ -281,44 +281,25 @@ jobs:
           helm search repo opendatahub-spark-operator
 
       # ======================================================================
-      # Step 9: Setup PVCs and upload test PDFs
-      # Creates namespace, PVCs, and uploads test PDF files before tests run
+      # Step 9: Upload test PDFs to input PVC
+      # The namespace and PVCs are created by setup-kind-cluster.sh
       # ======================================================================
-      - name: Setup PVCs and upload test PDFs
+      - name: Upload test PDFs
         run: |
-          echo "Setting up PVCs and uploading test data..."
-          
-          # Create namespace first (BeforeSuite will see it already exists - idempotent)
-          echo "Creating namespace..."
-          kubectl apply -f examples/openshift/k8s/base/namespace.yaml
-          kubectl get namespace spark-operator
-          
-          # Note: RBAC is applied by BeforeSuite in the Go tests, no need to do it here
-          
-          # Create input and output PVCs
-          # Transform production PVCs by removing storageClassName (gp3-csi is AWS/OpenShift only)
-          # This keeps k8s/*.yaml as single source of truth - no duplicate Kind-specific files
-          echo "Creating PVCs (using Kind's default StorageClass)..."
-          sed '/storageClassName:/d' examples/openshift/k8s/docling-input-pvc.yaml | kubectl apply -f -
-          sed '/storageClassName:/d' examples/openshift/k8s/docling-output-pvc.yaml | kubectl apply -f -
-          
-          # Note: Kind uses WaitForFirstConsumer, so PVCs won't bind until a Pod uses them
-          # The upload step below will trigger binding when it creates the helper pod
-          echo "PVCs created (will bind when first consumer pod is created):"
-          kubectl get pvc -n spark-operator
-          
-          echo "PVC status:"
-          kubectl get pvc -n spark-operator
-          
-          # Upload test PDFs using deploy.sh
           echo "Uploading test PDFs from examples/openshift/tests/assets/..."
           chmod +x examples/openshift/k8s/deploy.sh
           cd examples/openshift && ./k8s/deploy.sh upload ./tests/assets/
           
-          echo "✅ PVCs created and test PDFs uploaded successfully!"
+          echo ""
+          echo "PVC status:"
+          kubectl get pvc -n spark-operator
+          
+          echo "✅ Test PDFs uploaded successfully!"
 
       # ======================================================================
-      # Step 10: Run OpenShift E2E tests
+      # Step 10: Run OpenShift E2E tests using make target
+      # Uses Go tests for comprehensive validation
+      # Alternative: Use shell tests with 'make test-all'
       # ======================================================================
       - name: Run OpenShift E2E tests
         env:
@@ -331,12 +312,12 @@ jobs:
           echo "  2. Verify fsGroup is NOT 185"
           echo "  3. Run docling-spark-app workload"
           echo ""
+          echo "Note: For shell-based tests, use: make test-all"
+          echo ""
 
-          # Run the OpenShift-specific tests (requires -tags=openshift to include)
-          go test -tags=openshift ./examples/openshift/tests/ \
-            -v \
-            -ginkgo.v \
-            -timeout 30m
+          # Run the OpenShift-specific Go tests (requires -tags=openshift to include)
+          # These are more comprehensive than shell tests
+          make openshift-e2e-test
 
       # ======================================================================
       # Step 11: Download and show results
@@ -496,13 +477,14 @@ jobs:
           kubectl get events -A --sort-by='.lastTimestamp' | tail -50
 
       # ======================================================================
-      # Step 14: Cleanup Kind cluster
+      # Step 14: Cleanup Kind cluster using cleanup script
       # ======================================================================
       - name: Cleanup Kind cluster
         if: always()
         run: |
           echo "Cleaning up Kind cluster..."
-          kind delete cluster --name spark-operator || true
+          chmod +x examples/openshift/tests/cleanup-kind-cluster.sh
+          examples/openshift/tests/cleanup-kind-cluster.sh || true
 
   # ============================================================================
   # Job 3: Stop EC2 Runner
