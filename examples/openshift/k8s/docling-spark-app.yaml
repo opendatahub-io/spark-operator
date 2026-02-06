@@ -2,6 +2,7 @@
 #
 # IMPORTANT: Update namespace and serviceAccount based on your deployment:
 #   - config/default/:        namespace=spark-operator, serviceAccount=spark-operator-spark
+# To ensure compatibility with OpenShift's default restricted-v2 Security Context Constraint (SCC), the explicit securityContext block (including runAsNonRoot, fsGroup, etc.) has been removed
 
 
 apiVersion: "sparkoperator.k8s.io/v1beta2"
