@@ -283,6 +283,65 @@ deploy: helm manifests update-crd kind-load-image ## Deploy controller to the K8
 undeploy: helm ## Uninstall spark-operator
 	$(HELM) uninstall spark-operator
 
+##@ OpenShift/KIND Tests
+##
+## These targets work on both KIND (local) and OpenShift clusters.
+## Use CLEANUP=false to skip cleanup (default: true).
+## Example: CLEANUP=false make test-spark-pi
+##
+
+.PHONY: kind-setup
+kind-setup: kind helm ## Setup a local Kind cluster for testing.
+	@echo "Setting up Kind cluster..."
+	chmod +x examples/openshift/tests/setup-kind-cluster.sh
+	PATH="$(LOCALBIN):$(PATH)" examples/openshift/tests/setup-kind-cluster.sh
+
+.PHONY: kind-setup-full
+kind-setup-full: kind helm ## Setup Kind cluster with docling image and test assets.
+	@echo "Setting up Kind cluster with full docling setup..."
+	chmod +x examples/openshift/tests/setup-kind-cluster.sh
+	PATH="$(LOCALBIN):$(PATH)" examples/openshift/tests/setup-kind-cluster.sh --with-docling --upload-assets
+
+.PHONY: kind-cleanup
+kind-cleanup: kind ## Delete the Kind cluster and cleanup resources.
+	@echo "Cleaning up Kind cluster..."
+	chmod +x examples/openshift/tests/cleanup-kind-cluster.sh
+	PATH="$(LOCALBIN):$(PATH)" examples/openshift/tests/cleanup-kind-cluster.sh
+
+.PHONY: operator-install
+operator-install: ## Install Spark operator on KIND or OpenShift cluster. Use CLEANUP=false to keep installed.
+	@echo "Installing Spark operator..."
+	chmod +x examples/openshift/tests/test-operator-install.sh
+	CLEANUP=$(CLEANUP) examples/openshift/tests/test-operator-install.sh
+
+.PHONY: test-spark-pi
+test-spark-pi: ## Run Spark Pi test on KIND or OpenShift. Use CLEANUP=false to keep resources.
+	@echo "Running Spark Pi test..."
+	chmod +x examples/openshift/tests/test-spark-pi.sh
+	CLEANUP=$(CLEANUP) examples/openshift/tests/test-spark-pi.sh
+
+.PHONY: test-docling-spark
+test-docling-spark: ## Run Docling Spark test via Go e2e tests (includes operator install + docling workload).
+	@echo "Running Docling Spark test (Go e2e tests)..."
+	go test -tags=openshift ./examples/openshift/tests/ -v -ginkgo.v -timeout 30m
+
+.PHONY: test-all
+test-all: ## Run all tests (operator-install, spark-pi, then docling via Go tests).
+	@echo "Running all OpenShift/KIND tests..."
+	$(MAKE) operator-install CLEANUP=false
+	$(MAKE) test-spark-pi CLEANUP=false
+	$(MAKE) test-docling-spark
+
+.PHONY: openshift-e2e-test
+openshift-e2e-test: test-docling-spark ## Alias for test-docling-spark (Go e2e tests).
+
+## Legacy aliases (for backwards compatibility)
+.PHONY: openshift-test-setup openshift-test-cleanup openshift-test-shell openshift-test
+openshift-test-setup: kind-setup ## [DEPRECATED] Use 'make kind-setup' instead.
+openshift-test-cleanup: kind-cleanup ## [DEPRECATED] Use 'make kind-cleanup' instead.
+openshift-test-shell: test-spark-pi ## [DEPRECATED] Use 'make test-spark-pi' instead.
+openshift-test: openshift-e2e-test ## [DEPRECATED] Use 'make openshift-e2e-test' instead.
+
 ##@ Dependencies
 
 $(LOCALBIN):
@@ -302,6 +361,7 @@ $(CONTROLLER_GEN): $(LOCALBIN)
 kind: $(KIND) ## Download kind locally if necessary.
 $(KIND): $(LOCALBIN)
 	$(call go-install-tool,$(KIND),sigs.k8s.io/kind,$(KIND_VERSION))
+	ln -sf $(notdir $(KIND)) $(LOCALBIN)/kind
 
 .PHONY: setup-envtest
 setup-envtest: envtest ## Download the binaries required for ENVTEST in the local bin directory.
