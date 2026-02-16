@@ -58,3 +58,13 @@ COPY --from=builder /workspace/bin/spark-operator /usr/bin/spark-operator
 COPY entrypoint.sh /usr/bin/
 
 ENTRYPOINT ["/usr/bin/entrypoint.sh"]
+
+LABEL com.redhat.component="odh-spark-operator" \
+      name="managed-open-data-hub/odh-spark-operator-rhel9" \
+      description="This image contains the Spark Operator controller. It watches for SparkApplication Custom Resources (CRDs) and automates the submission, monitoring, and scaling of Spark driver and executor pods on the cluster." \
+      summary="odh-spark-operator" \
+      maintainer="['managed-open-data-hub@redhat.com']" \
+      io.openshift.expose-services="" \
+      io.k8s.display-name="odh-spark-operator" \
+      io.k8s.description="odh-spark-operator" \
+      com.redhat.license_terms="https://www.redhat.com/licenses/Red_Hat_Standard_EULA_20191108.pdf"
