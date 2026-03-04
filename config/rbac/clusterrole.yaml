@@ -8,20 +8,22 @@ metadata:
     app.kubernetes.io/instance: spark-operator
     app.kubernetes.io/component: controller
 rules:
-# Core resources
+# Core resources - verbs are tailored per resource to follow least privilege
 - apiGroups: [""]
-  resources:
-  - pods
-  - configmaps
-  - services
-  - persistentvolumeclaims
-  verbs: [create, delete, deletecollection, get, list, patch, update, watch]
+  resources: [pods]
+  verbs: [create, delete, get, list, patch, update, watch]
+- apiGroups: [""]
+  resources: [configmaps]
+  verbs: [create, delete, get, list, patch, update, watch]
+- apiGroups: [""]
+  resources: [services]
+  verbs: [create, delete, get, list, update, watch]
+- apiGroups: [""]
+  resources: [persistentvolumeclaims]
+  verbs: [get, list, watch]
 - apiGroups: [""]
   resources: [events]
   verbs: [create, patch, update]
-- apiGroups: [""]
-  resources: [nodes]
-  verbs: [get]
 - apiGroups: [""]
   resources: [resourcequotas]
   verbs: [get, list, watch]
