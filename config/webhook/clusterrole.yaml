@@ -48,3 +48,11 @@ rules:
       - get
       - list
       - watch
+  # Pods - read-only permissions for informer cache sync
+  - apiGroups:
+      - ""
+    resources:
+      - pods
+    verbs:
+      - list
+      - watch
