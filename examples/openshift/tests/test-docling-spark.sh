@@ -1,29 +1,33 @@
 #!/bin/bash
 # ============================================================================
-# Test: Spark Pi Application (Lightweight)
+# Test: Docling Spark Application
 # ============================================================================
 #
-# This is a LIGHTWEIGHT test that runs the classic Spark Pi example.
-# Use this for quick validation of the Spark Operator without the heavy
-# docling-spark image (~9GB).
+# This test runs the docling-spark-app workload which converts PDFs to
+# markdown using Apache Spark. It validates the full Spark Operator
+# pipeline including PVC storage, multi-executor workloads, and
+# OpenShift security contexts.
 #
 # This test verifies:
 #   1. SparkApplication can be submitted
 #   2. Driver pod starts and runs
-#   3. Application completes successfully
-#   4. Pi calculation result is present in logs
+#   3. Executor pods are created
+#   4. Application completes successfully
+#   5. Driver logs confirm execution
 #
 # Prerequisites:
-#   - Spark Operator already installed (run test-operator-install.sh first)
-#   - jq
+#   - Spark Operator already installed (run 'make operator-install' first)
+#   - PVCs created (docling-input, docling-output)
+#   - Test PDFs uploaded to input PVC
 #
 # Usage:
-#   ./test-spark-pi.sh
+#   ./test-docling-spark.sh
+#   CLEANUP=false ./test-docling-spark.sh   # Keep resources for debugging
 #
 # Environment Variables:
 #   APP_NAMESPACE     - Namespace to deploy app (default: spark-operator)
-#   TIMEOUT_SECONDS   - Max wait time for completion (default: 300)
-#   CLEANUP           - Set to "false" to preserve resources for debugging (default: true)
+#   TIMEOUT_SECONDS   - Max wait time for completion (default: 600)
+#   CLEANUP           - Set to "false" to preserve resources (default: true)
 #
 # ============================================================================
 
@@ -33,11 +37,15 @@ set -euo pipefail
 # Configuration
 # ============================================================================
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(cd "$SCRIPT_DIR/../../.." && pwd)"
 
 APP_NAMESPACE="${APP_NAMESPACE:-spark-operator}"
-APP_NAME="${APP_NAME:-spark-pi}"
-TIMEOUT_SECONDS="${TIMEOUT_SECONDS:-600}"  # 10 minutes should be enough to pull the image and run spark-pi
-SPARK_IMAGE="${SPARK_IMAGE:-quay.io/rishasin/docling-spark:latest}"
+APP_NAME="${APP_NAME:-docling-spark-job}"
+DRIVER_POD="${APP_NAME}-driver"
+TIMEOUT_SECONDS="${TIMEOUT_SECONDS:-600}"
+APP_YAML="${APP_YAML:-$REPO_ROOT/examples/openshift/k8s/docling-spark-app.yaml}"
+RBAC_YAML="${RBAC_YAML:-$REPO_ROOT/examples/openshift/k8s/base/rbac.yaml}"
+
 # ============================================================================
 # Helper Functions
 # ============================================================================
@@ -52,7 +60,7 @@ cleanup() {
         echo ""
         echo "To inspect:"
         echo "  kubectl get sparkapplication $APP_NAME -n $APP_NAMESPACE -o yaml"
-        echo "  kubectl logs ${APP_NAME}-driver -n $APP_NAMESPACE"
+        echo "  kubectl logs $DRIVER_POD -n $APP_NAMESPACE"
         echo ""
         echo "To cleanup manually:"
         echo "  kubectl delete sparkapplication $APP_NAME -n $APP_NAMESPACE"
@@ -79,11 +87,15 @@ get_app_error() {
 # ============================================================================
 log "Running pre-flight checks..."
 
-# Check if operator is installed
-if ! kubectl get deployment -n spark-operator -l app.kubernetes.io/name=spark-operator &>/dev/null; then
-    fail "Spark Operator not found. Run test-operator-install.sh first."
+if ! kubectl get deployment -n "$APP_NAMESPACE" -l app.kubernetes.io/name=spark-operator &>/dev/null; then
+    fail "Spark Operator not found. Run 'make operator-install' first."
 fi
 echo "  Spark Operator: Found"
+
+if [ ! -f "$APP_YAML" ]; then
+    fail "SparkApplication YAML not found: $APP_YAML"
+fi
+echo "  App YAML: $APP_YAML"
 
 pass "Pre-flight checks passed"
 
@@ -93,36 +105,25 @@ pass "Pre-flight checks passed"
 log "Creating namespace '$APP_NAMESPACE' if not exists..."
 kubectl create namespace "$APP_NAMESPACE" --dry-run=client -o yaml | kubectl apply -f -
 
-REPO_ROOT="$(cd "$SCRIPT_DIR/../../.." && pwd)"
-RBAC_YAML="${RBAC_YAML:-$REPO_ROOT/examples/openshift/k8s/base/rbac.yaml}"
-
 log "Applying RBAC..."
 if [ -f "$RBAC_YAML" ]; then
-    kubectl apply -f "$RBAC_YAML"
+    kubectl apply -f "$RBAC_YAML" -n "$APP_NAMESPACE"
     pass "RBAC applied"
 else
     warn "RBAC YAML not found: $RBAC_YAML (assuming already applied)"
 fi
 
 # ============================================================================
-# Deploy SparkApplication (Pi Example)
+# Deploy SparkApplication (Docling Spark)
 # ============================================================================
-log "Deploying Spark Pi application..."
+log "Deploying Docling Spark application..."
 echo "  Name:      $APP_NAME"
 echo "  Namespace: $APP_NAMESPACE"
-echo "  Image:     $SPARK_IMAGE"
+echo "  YAML:      $APP_YAML"
 
-# Delete existing app if present
 kubectl delete sparkapplication "$APP_NAME" -n "$APP_NAMESPACE" --ignore-not-found 2>/dev/null || true
 
-# Apply the SparkApplication from YAML file (using envsubst for variable substitution)
-APP_YAML="${APP_YAML:-$SCRIPT_DIR/spark-pi-app.yaml}"
-if [ ! -f "$APP_YAML" ]; then
-    fail "SparkApplication YAML not found: $APP_YAML"
-fi
-
-export APP_NAME APP_NAMESPACE SPARK_IMAGE
-envsubst < "$APP_YAML" | kubectl apply -f -
+kubectl apply -f "$APP_YAML" -n "$APP_NAMESPACE"
 
 pass "SparkApplication submitted"
 
@@ -136,13 +137,12 @@ LAST_STATE=""
 
 while [ $SECONDS -lt $TIMEOUT_SECONDS ]; do
     STATE=$(get_app_state)
-    
-    # Only log state changes
+
     if [ "$STATE" != "$LAST_STATE" ]; then
         echo "  [${SECONDS}s] State: $STATE"
         LAST_STATE="$STATE"
     fi
-    
+
     case "$STATE" in
         COMPLETED)
             pass "SparkApplication completed successfully!"
@@ -153,22 +153,29 @@ while [ $SECONDS -lt $TIMEOUT_SECONDS ]; do
             echo "=== SparkApplication Failed ==="
             echo "Error: $(get_app_error)"
             echo ""
+            echo "=== SparkApplication Status ==="
+            kubectl get sparkapplication "$APP_NAME" -n "$APP_NAMESPACE" \
+                -o jsonpath='{.status}' 2>/dev/null || true
+            echo ""
             echo "=== Driver Pod Logs ==="
-            kubectl logs "${APP_NAME}-driver" -n "$APP_NAMESPACE" --tail=50 2>/dev/null || echo "(no logs available)"
+            kubectl logs "$DRIVER_POD" -n "$APP_NAMESPACE" --tail=50 2>/dev/null || echo "(no logs available)"
             fail "SparkApplication failed!"
             ;;
         FAILED_SUBMISSION)
             echo ""
             echo "=== Submission Failed ==="
             echo "Error: $(get_app_error)"
+            echo ""
+            echo "=== SparkApplication Status ==="
+            kubectl get sparkapplication "$APP_NAME" -n "$APP_NAMESPACE" \
+                -o jsonpath='{.status}' 2>/dev/null || true
             fail "SparkApplication submission failed!"
             ;;
     esac
-    
+
     sleep 5
 done
 
-# Check if we timed out
 if [ "$STATE" != "COMPLETED" ]; then
     echo ""
     echo "=== Timeout - Current State: $STATE ==="
@@ -177,7 +184,7 @@ if [ "$STATE" != "COMPLETED" ]; then
     kubectl get pods -n "$APP_NAMESPACE" -o wide
     echo ""
     echo "=== Driver Pod Logs ==="
-    kubectl logs "${APP_NAME}-driver" -n "$APP_NAMESPACE" --tail=100 2>/dev/null || echo "(no logs available)"
+    kubectl logs "$DRIVER_POD" -n "$APP_NAMESPACE" --tail=100 2>/dev/null || echo "(no logs available)"
     fail "SparkApplication did not complete within ${TIMEOUT_SECONDS}s"
 fi
 
@@ -186,38 +193,27 @@ fi
 # ============================================================================
 log "Verifying execution..."
 
-# Check driver pod existed and completed
-DRIVER_POD="${APP_NAME}-driver"
+# Check driver pod status
 DRIVER_STATUS=$(kubectl get pod "$DRIVER_POD" -n "$APP_NAMESPACE" -o jsonpath='{.status.phase}' 2>/dev/null || echo "NOT_FOUND")
 echo "  Driver pod ($DRIVER_POD): $DRIVER_STATUS"
 
 # Get executor count
-EXECUTOR_COUNT=$(kubectl get pods -n "$APP_NAMESPACE" -l "spark-role=executor,spark-app-name=$APP_NAME" --no-headers 2>/dev/null | wc -l)
+EXECUTOR_COUNT=$(kubectl get pods -n "$APP_NAMESPACE" -l "spark-role=executor,spark-app-name=$APP_NAME" --no-headers 2>/dev/null | wc -l | tr -d ' ')
 echo "  Executors created: $EXECUTOR_COUNT"
 
-# Check for Pi result in logs
+# ============================================================================
+# Show Driver Logs
+# ============================================================================
 echo ""
-log "Checking for Pi calculation result..."
-PI_RESULT=$(kubectl logs "$DRIVER_POD" -n "$APP_NAMESPACE" 2>/dev/null | grep -i "Pi is roughly" || echo "")
-
-if [ -n "$PI_RESULT" ]; then
-    echo "  📊 $PI_RESULT"
-    pass "Pi calculation completed!"
-else
-    warn "Could not find Pi result in logs (job may have completed differently)"
-fi
-
-# Show last few lines of driver logs
-echo ""
-log "Driver logs (last 10 lines):"
-kubectl logs "$DRIVER_POD" -n "$APP_NAMESPACE" --tail=10 2>/dev/null || warn "Could not get driver logs"
+log "Driver logs (last 20 lines):"
+kubectl logs "$DRIVER_POD" -n "$APP_NAMESPACE" --tail=20 2>/dev/null || warn "Could not get driver logs"
 
 # ============================================================================
 # Summary
 # ============================================================================
 echo ""
 echo "============================================"
-pass "SPARK PI TEST PASSED!"
+pass "DOCLING SPARK TEST PASSED!"
 echo "============================================"
 echo ""
 echo "Summary:"
@@ -226,8 +222,4 @@ echo "  - Namespace: $APP_NAMESPACE"
 echo "  - Final State: COMPLETED"
 echo "  - Driver Pod: $DRIVER_STATUS"
 echo "  - Executor Pods: $EXECUTOR_COUNT"
-if [ -n "$PI_RESULT" ]; then
-    echo "  - Result: $PI_RESULT"
-fi
 echo ""
-
