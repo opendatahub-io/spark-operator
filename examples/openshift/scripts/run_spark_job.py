@@ -350,14 +350,20 @@ def main():
         print("✅ Enhanced processing complete!")
         print("\n📥 To download results from PVC:")
         print("   ./k8s/deploy.sh download ./output/")
+
+        if failed > 0:
+            print(f"\n⚠️  {failed}/{total} documents failed processing.")
+            if successful == 0:
+                print("❌ All documents failed! Exiting with error.")
+                sys.exit(1)
         
     except Exception as e:
         print(f"\n❌ ERROR: {e}")
         import traceback
         traceback.print_exc()
+        sys.exit(1)
         
     finally:
-        # Always stop Spark when done
         print("\n🛑 Stopping Spark...")
         spark.stop()
         print("✅ Bye!")
