@@ -46,6 +46,13 @@ spec:
       version: 3.5.7
     serviceAccount: spark-operator-spark
     securityContext: {}
+    env:
+      - name: HOME
+        value: /tmp
+      - name: HF_HOME
+        value: /tmp/.cache/huggingface
+      - name: XDG_CACHE_HOME
+        value: /tmp/.cache
     volumeMounts:
       - name: input-data
         mountPath: /app/assets
@@ -60,6 +67,13 @@ spec:
     labels:
       version: 3.5.7
     securityContext: {}
+    env:
+      - name: HOME
+        value: /tmp
+      - name: HF_HOME
+        value: /tmp/.cache/huggingface
+      - name: XDG_CACHE_HOME
+        value: /tmp/.cache
     volumeMounts:
       - name: input-data
         mountPath: /app/assets
