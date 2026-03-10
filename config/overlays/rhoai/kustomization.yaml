@@ -17,6 +17,7 @@ resources:
 # 3. Delete the Namespace resource (RHOAI operator manages it)
 patches:
   - path: delete-namespace.yaml
+  - path: networkpolicy.yaml
 
 # 4. Add RHOAI-specific labels
 labels:
