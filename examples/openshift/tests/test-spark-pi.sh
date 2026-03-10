@@ -88,23 +88,6 @@ echo "  Spark Operator: Found"
 pass "Pre-flight checks passed"
 
 # ============================================================================
-# Setup: Create namespace and Apply RBAC
-# ============================================================================
-log "Creating namespace '$APP_NAMESPACE' if not exists..."
-kubectl create namespace "$APP_NAMESPACE" --dry-run=client -o yaml | kubectl apply -f -
-
-REPO_ROOT="$(cd "$SCRIPT_DIR/../../.." && pwd)"
-RBAC_YAML="${RBAC_YAML:-$REPO_ROOT/examples/openshift/k8s/base/rbac.yaml}"
-
-log "Applying RBAC..."
-if [ -f "$RBAC_YAML" ]; then
-    kubectl apply -f "$RBAC_YAML"
-    pass "RBAC applied"
-else
-    warn "RBAC YAML not found: $RBAC_YAML (assuming already applied)"
-fi
-
-# ============================================================================
 # Deploy SparkApplication (Pi Example)
 # ============================================================================
 log "Deploying Spark Pi application..."

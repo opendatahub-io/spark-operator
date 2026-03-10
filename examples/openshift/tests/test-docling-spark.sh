@@ -44,7 +44,6 @@ APP_NAME="${APP_NAME:-docling-spark-job}"
 DRIVER_POD="${APP_NAME}-driver"
 TIMEOUT_SECONDS="${TIMEOUT_SECONDS:-600}"
 APP_YAML="${APP_YAML:-$REPO_ROOT/examples/openshift/k8s/docling-spark-app.yaml}"
-RBAC_YAML="${RBAC_YAML:-$REPO_ROOT/examples/openshift/k8s/base/rbac.yaml}"
 
 # ============================================================================
 # Helper Functions
@@ -100,18 +99,11 @@ echo "  App YAML: $APP_YAML"
 pass "Pre-flight checks passed"
 
 # ============================================================================
-# Setup: Create namespace and Apply RBAC
+# Setup: Create namespace
 # ============================================================================
 log "Creating namespace '$APP_NAMESPACE' if not exists..."
 kubectl create namespace "$APP_NAMESPACE" --dry-run=client -o yaml | kubectl apply -f -
 
-log "Applying RBAC..."
-if [ -f "$RBAC_YAML" ]; then
-    kubectl apply -f "$RBAC_YAML" -n "$APP_NAMESPACE"
-    pass "RBAC applied"
-else
-    warn "RBAC YAML not found: $RBAC_YAML (assuming already applied)"
-fi
 
 # ============================================================================
 # Deploy SparkApplication (Docling Spark)
