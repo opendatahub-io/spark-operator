@@ -2,11 +2,11 @@
 # OpenShift Docling E2E Test Workflow (EC2 Runner)
 # ============================================================================
 #
-# This workflow tests the Spark operator from the OpenDataHub Helm repository:
-#   https://opendatahub-io.github.io/spark-operator
+# This workflow tests the Spark operator using Kustomize manifests and
+# shell-based E2E tests.
 #
 # Tests performed:
-#   1. Installs Spark operator from remote Helm repo (not local chart)
+#   1. Installs Spark operator via Kustomize (config/default/)
 #   2. Verifies fsGroup is NOT 185 (OpenShift security requirement)
 #   3. Runs the docling-spark-app workload from examples/openshift/k8s/
 #
@@ -269,74 +269,48 @@ jobs:
           echo "✅ Image loaded into Kind cluster successfully!"
 
       # ======================================================================
-      # Step 8: Add Helm repository
-      # This adds the custom Spark operator Helm repository
-      # ======================================================================
-      - name: Add custom Helm repository
-        run: |
-          echo "Adding Helm repository: https://opendatahub-io.github.io/spark-operator"
-          helm repo add opendatahub-spark-operator https://opendatahub-io.github.io/spark-operator
-          helm repo update
-          echo "Available charts:"
-          helm search repo opendatahub-spark-operator
-
-      # ======================================================================
-      # Step 9: Setup PVCs and upload test PDFs
-      # Creates namespace, PVCs, and uploads test PDF files before tests run
+      # Step 8: Setup PVCs and upload test PDFs
+      # Namespace and RBAC are handled by test-docling-spark.sh
       # ======================================================================
       - name: Setup PVCs and upload test PDFs
         run: |
           echo "Setting up PVCs and uploading test data..."
           
-          # Create namespace first (BeforeSuite will see it already exists - idempotent)
           echo "Creating namespace..."
-          kubectl apply -f examples/openshift/k8s/base/namespace.yaml
-          kubectl get namespace spark-operator
+          kubectl create namespace spark-operator --dry-run=client -o yaml | kubectl apply -f -
           
-          # Note: RBAC is applied by BeforeSuite in the Go tests, no need to do it here
-          
-          # Create input and output PVCs
-          # Transform production PVCs by removing storageClassName (gp3-csi is AWS/OpenShift only)
-          # This keeps k8s/*.yaml as single source of truth - no duplicate Kind-specific files
           echo "Creating PVCs (using Kind's default StorageClass)..."
           sed '/storageClassName:/d' examples/openshift/k8s/docling-input-pvc.yaml | kubectl apply -f -
           sed '/storageClassName:/d' examples/openshift/k8s/docling-output-pvc.yaml | kubectl apply -f -
           
-          # Note: Kind uses WaitForFirstConsumer, so PVCs won't bind until a Pod uses them
-          # The upload step below will trigger binding when it creates the helper pod
-          echo "PVCs created (will bind when first consumer pod is created):"
-          kubectl get pvc -n spark-operator
-          
           echo "PVC status:"
           kubectl get pvc -n spark-operator
           
-          # Upload test PDFs using deploy.sh
           echo "Uploading test PDFs from examples/openshift/tests/assets/..."
           chmod +x examples/openshift/k8s/deploy.sh
           cd examples/openshift && ./k8s/deploy.sh upload ./tests/assets/
           
-          echo "✅ PVCs created and test PDFs uploaded successfully!"
+          echo "PVCs created and test PDFs uploaded successfully!"
 
       # ======================================================================
-      # Step 10: Run OpenShift E2E tests
+      # Step 9: Install Spark operator via Kustomize
       # ======================================================================
-      - name: Run OpenShift E2E tests
-        env:
-          # Skip namespace cleanup so we can download results after tests
-          SKIP_NAMESPACE_CLEANUP: "true"
+      - name: Install Spark operator
         run: |
-          echo "Running OpenShift E2E tests..."
-          echo "These tests will:"
-          echo "  1. Install Spark operator from https://opendatahub-io.github.io/spark-operator"
-          echo "  2. Verify fsGroup is NOT 185"
-          echo "  3. Run docling-spark-app workload"
-          echo ""
+          echo "Installing Spark operator..."
+          chmod +x examples/openshift/tests/test-operator-install.sh
+          CLEANUP=false examples/openshift/tests/test-operator-install.sh
 
-          # Run the OpenShift-specific tests (requires -tags=openshift to include)
-          go test -tags=openshift ./examples/openshift/tests/ \
-            -v \
-            -ginkgo.v \
-            -timeout 30m
+      # ======================================================================
+      # Step 10: Run Docling Spark E2E test (shell-based)
+      # ======================================================================
+      - name: Run Docling Spark E2E test
+        env:
+          CLEANUP: "false"
+        run: |
+          echo "Running Docling Spark E2E test..."
+          chmod +x examples/openshift/tests/test-docling-spark.sh
+          CLEANUP=false examples/openshift/tests/test-docling-spark.sh
 
       # ======================================================================
       # Step 11: Download and show results
