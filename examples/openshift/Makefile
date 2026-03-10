@@ -1,0 +1,86 @@
+.SILENT:
+
+SHELL = /usr/bin/env bash -o pipefail
+.SHELLFLAGS = -ec
+
+# Directory paths (relative to this Makefile in examples/openshift/)
+MAKEFILE_DIR := $(dir $(abspath $(lastword $(MAKEFILE_LIST))))
+REPO_ROOT := $(abspath $(MAKEFILE_DIR)/../..)
+TESTS_DIR := $(MAKEFILE_DIR)/tests
+
+# Include repo root bin/ in PATH so tools installed by the root Makefile
+# (e.g. kind via 'make kind') are available to the shell scripts.
+LOCALBIN := $(REPO_ROOT)/bin
+export PATH := $(LOCALBIN):$(PATH)
+
+# Configuration
+KIND_CLUSTER_NAME ?= spark-operator
+CLEANUP ?= true
+
+##@ General
+
+.PHONY: help
+help: ## Display this help.
+	@awk 'BEGIN {FS = ":.*##"; printf "\nUsage:\n  make \033[36m<target>\033[0m\n"} /^[a-zA-Z_0-9-]+:.*?##/ { printf "  \033[36m%-30s\033[0m %s\n", $$1, $$2 } /^##@/ { printf "\n\033[1m%s\033[0m\n", substr($$0, 5) } ' $(MAKEFILE_LIST)
+
+##@ Cluster Setup
+
+.PHONY: kind-setup
+kind-setup: ## Setup a local Kind cluster for testing.
+	@echo "Setting up Kind cluster..."
+	chmod +x $(TESTS_DIR)/setup-kind-cluster.sh
+	$(TESTS_DIR)/setup-kind-cluster.sh
+
+.PHONY: kind-setup-full
+kind-setup-full: ## Setup Kind cluster with docling image and test assets.
+	@echo "Setting up Kind cluster with full docling setup..."
+	chmod +x $(TESTS_DIR)/setup-kind-cluster.sh
+	$(TESTS_DIR)/setup-kind-cluster.sh --with-docling --upload-assets
+
+.PHONY: kind-cleanup
+kind-cleanup: ## Delete the Kind cluster and cleanup resources.
+	@echo "Cleaning up Kind cluster..."
+	chmod +x $(TESTS_DIR)/cleanup-kind-cluster.sh
+	$(TESTS_DIR)/cleanup-kind-cluster.sh
+
+##@ Tests
+## These targets work on both KIND (local) and OpenShift clusters.
+## Use CLEANUP=false to skip cleanup (default: true).
+## Example: CLEANUP=false make test-spark-pi
+
+.PHONY: operator-install
+operator-install: ## Install Spark operator on KIND or OpenShift cluster.
+	@if ! kubectl cluster-info &>/dev/null; then \
+		echo "No cluster detected, running kind-setup first..."; \
+		$(MAKE) kind-setup; \
+	fi
+	@echo "Installing Spark operator..."
+	chmod +x $(TESTS_DIR)/test-operator-install.sh
+	CLEANUP=$(CLEANUP) $(TESTS_DIR)/test-operator-install.sh
+
+.PHONY: test-spark-pi
+test-spark-pi: ## Run Spark Pi test on KIND or OpenShift.
+	@if ! kubectl get deployment -n spark-operator -l app.kubernetes.io/name=spark-operator &>/dev/null; then \
+		echo "Spark operator not found, running operator-install first..."; \
+		$(MAKE) operator-install CLEANUP=false; \
+	fi
+	@echo "Running Spark Pi test..."
+	chmod +x $(TESTS_DIR)/test-spark-pi.sh
+	CLEANUP=$(CLEANUP) $(TESTS_DIR)/test-spark-pi.sh
+
+.PHONY: test-docling-spark
+test-docling-spark: ## Run Docling Spark test on KIND or OpenShift.
+	@if ! kubectl get deployment -n spark-operator -l app.kubernetes.io/name=spark-operator &>/dev/null; then \
+		echo "Spark operator not found, running operator-install first..."; \
+		$(MAKE) operator-install CLEANUP=false; \
+	fi
+	@echo "Running Docling Spark test..."
+	chmod +x $(TESTS_DIR)/test-docling-spark.sh
+	CLEANUP=$(CLEANUP) $(TESTS_DIR)/test-docling-spark.sh
+
+.PHONY: test-all
+test-all: ## Run all tests (operator-install, spark-pi, docling).
+	@echo "Running all OpenShift/KIND tests..."
+	$(MAKE) operator-install CLEANUP=false
+	$(MAKE) test-spark-pi CLEANUP=false
+	$(MAKE) test-docling-spark

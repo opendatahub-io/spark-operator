@@ -44,6 +44,19 @@ oc login
 
 #### 3. Install the Operator
 
+**Option A — Using Make (recommended):**
+
+The Makefile provides a single command that installs the operator, verifies the deployment (pods ready, non-root UID, fsGroup != 185), and optionally cleans up:
+
+```bash
+# Install and verify (keeps operator running for subsequent use)
+CLEANUP=false make -C examples/openshift operator-install
+```
+
+> This is the same command CI uses. If no cluster is detected, it will automatically create a local Kind cluster first.
+
+**Option B — Manual Kustomize apply:**
+
 ```bash
 oc apply -k config/default/ --server-side=true
 ```
@@ -60,6 +73,8 @@ This creates:
 > **Multiple Namespaces:** By default, the operator watches all namespaces (empty `--namespaces=` flag). To watch specific namespaces, modify the `--namespaces` argument in `config/manager/manager.yaml` to `--namespaces=ns1,ns2,ns3`.
 
 #### 4. Verify Installation
+
+If you used `make operator-install`, verification is already done for you (the script checks pod readiness, non-root UID, and fsGroup). Otherwise, verify manually:
 
 ```bash
 oc get pods -n spark-operator -l app.kubernetes.io/name=spark-operator
@@ -313,7 +328,73 @@ oc port-forward -n spark-operator svc/docling-spark-job-ui-svc 4040:4040
 # Open: http://localhost:4040
 ```
 
-## 7: Cleanup
+## 7. Running E2E Tests with Make
+
+The `examples/openshift/Makefile` provides standardized targets that are the same commands CI runs. These work on both **OpenShift** and local **Kind** clusters.
+
+> **Tip:** Run `make help` from `examples/openshift/` to see all available targets and their descriptions.
+
+### Available Make Targets
+
+| Target | Description |
+|--------|-------------|
+| `make help` | Display all available targets with descriptions |
+| `make kind-setup` | Create a local Kind cluster with namespace and PVCs |
+| `make kind-setup-full` | Same as above + pull the docling-spark image (~9.5GB) and upload test PDFs |
+| `make kind-cleanup` | Delete the Kind cluster and all resources |
+| `make operator-install` | Install the Spark operator (auto-creates a Kind cluster if none detected) |
+| `make test-spark-pi` | Run a lightweight Spark Pi test (auto-installs operator if needed) |
+| `make test-docling-spark` | Run the Docling Spark document conversion test |
+| `make test-all` | Run all tests in sequence (operator-install, spark-pi, docling) |
+
+### Local Kind Testing (Quick Start)
+
+If you don't have an OpenShift cluster, you can run the full test suite locally with just Docker and `kind` installed:
+
+```bash
+cd examples/openshift
+
+# Option 1: Run everything in one command
+make test-all
+
+# Option 2: Step by step
+make kind-setup                       # Create Kind cluster
+CLEANUP=false make operator-install   # Install operator (keep it running)
+CLEANUP=false make test-spark-pi      # Run Spark Pi test
+make test-docling-spark               # Run Docling Spark test
+make kind-cleanup                     # Tear down
+```
+
+> **Auto-detection:** `make operator-install` detects whether a cluster is already running. On OpenShift it uses the existing cluster; without one it creates a Kind cluster automatically.
+
+> **Auto-dependency:** `make test-spark-pi` and `make test-docling-spark` automatically install the operator if it isn't present, so you can jump straight to a test target.
+
+### Configuration
+
+All test targets support the `CLEANUP` environment variable. Set `CLEANUP=false` to preserve resources between test runs (useful for debugging or chaining tests):
+
+```bash
+CLEANUP=false make test-spark-pi
+```
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `CLEANUP` | `true` | Set to `false` to preserve resources after tests |
+| `KIND_CLUSTER_NAME` | `spark-operator` | Name of the Kind cluster |
+| `K8S_VERSION` | `v1.32.0` | Kubernetes version for Kind |
+| `TIMEOUT_SECONDS` | `600` | Max wait time for test completion |
+
+> **Detailed testing guide:** See [tests/README.md](./tests/README.md) for full documentation on individual test scripts, environment variables, architecture diagrams, and CI integration examples.
+
+## 8. Cleanup
+
+### Using Make (recommended for Kind clusters)
+
+```bash
+make -C examples/openshift kind-cleanup
+```
+
+### Manual Cleanup (OpenShift)
 
 ```bash
 # Delete the SparkApplication

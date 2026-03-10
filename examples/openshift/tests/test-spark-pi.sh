@@ -19,6 +19,7 @@
 #
 # Usage:
 #   ./test-spark-pi.sh
+#   CLEANUP=false ./test-spark-pi.sh   # Keep resources for debugging
 #
 # Environment Variables:
 #   APP_NAMESPACE     - Namespace to deploy app (default: spark-operator)

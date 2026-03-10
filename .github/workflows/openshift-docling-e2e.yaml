@@ -218,21 +218,21 @@ jobs:
           df -h
 
       # ======================================================================
-      # Step 5: Create a Kind cluster
-      # This creates a local Kubernetes cluster using Docker containers
+      # Step 5: Create Kind cluster using make target
+      # Uses the standardized setup script via Makefile
       # ======================================================================
       - name: Create Kind cluster
         env:
           K8S_VERSION: ${{ inputs.k8s_version || 'v1.30.8' }}
+          KIND_KUBE_CONFIG: ${{ env.KUBECONFIG }}
         run: |
           echo "Creating Kind cluster with Kubernetes ${K8S_VERSION}..."
-          kind create cluster \
-            --name spark-operator \
-            --config charts/spark-operator-chart/ci/kind-config.yaml \
-            --image kindest/node:${K8S_VERSION} \
-            --kubeconfig $KUBECONFIG \
-            --wait=1m
+          # Use the setup script directly (make target needs bin/ setup)
+          chmod +x examples/openshift/tests/setup-kind-cluster.sh
+          K8S_VERSION=${K8S_VERSION} KIND_KUBE_CONFIG=${KIND_KUBE_CONFIG} \
+            examples/openshift/tests/setup-kind-cluster.sh
           
+          echo ""
           echo "Kubeconfig written to: $KUBECONFIG"
           kubectl cluster-info
 
@@ -270,9 +270,9 @@ jobs:
 
       # ======================================================================
       # Step 8: Setup PVCs and upload test PDFs
-      # Namespace and RBAC are handled by test-docling-spark.sh
+      # Namespace is created below; RBAC is handled by operator install (config/default/)
       # ======================================================================
-      - name: Setup PVCs and upload test PDFs
+      - name: Upload test PDFs
         run: |
           echo "Setting up PVCs and uploading test data..."
           
@@ -296,21 +296,13 @@ jobs:
       # Step 9: Install Spark operator via Kustomize
       # ======================================================================
       - name: Install Spark operator
-        run: |
-          echo "Installing Spark operator..."
-          chmod +x examples/openshift/tests/test-operator-install.sh
-          CLEANUP=false examples/openshift/tests/test-operator-install.sh
+        run: CLEANUP=false make -C examples/openshift operator-install
 
       # ======================================================================
       # Step 10: Run Docling Spark E2E test (shell-based)
       # ======================================================================
       - name: Run Docling Spark E2E test
-        env:
-          CLEANUP: "false"
-        run: |
-          echo "Running Docling Spark E2E test..."
-          chmod +x examples/openshift/tests/test-docling-spark.sh
-          CLEANUP=false examples/openshift/tests/test-docling-spark.sh
+        run: CLEANUP=false make -C examples/openshift test-docling-spark
 
       # ======================================================================
       # Step 11: Download and show results
@@ -476,7 +468,8 @@ jobs:
         if: always()
         run: |
           echo "Cleaning up Kind cluster..."
-          kind delete cluster --name spark-operator || true
+          chmod +x examples/openshift/tests/cleanup-kind-cluster.sh
+          examples/openshift/tests/cleanup-kind-cluster.sh || true
 
   # ============================================================================
   # Job 3: Stop EC2 Runner

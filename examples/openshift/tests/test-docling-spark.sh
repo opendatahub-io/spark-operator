@@ -99,10 +99,31 @@ echo "  App YAML: $APP_YAML"
 pass "Pre-flight checks passed"
 
 # ============================================================================
-# Setup: Create namespace
+# Setup: Create namespace and ensure PVCs + test data exist
 # ============================================================================
 log "Creating namespace '$APP_NAMESPACE' if not exists..."
 kubectl create namespace "$APP_NAMESPACE" --dry-run=client -o yaml | kubectl apply -f -
+
+if ! kubectl get pvc docling-input -n "$APP_NAMESPACE" &>/dev/null || \
+   ! kubectl get pvc docling-output -n "$APP_NAMESPACE" &>/dev/null; then
+    log "PVCs not found — creating docling-input and docling-output..."
+    kubectl apply -f "$REPO_ROOT/examples/openshift/k8s/docling-input-pvc.yaml" -n "$APP_NAMESPACE"
+    kubectl apply -f "$REPO_ROOT/examples/openshift/k8s/docling-output-pvc.yaml" -n "$APP_NAMESPACE"
+    pass "PVCs created"
+
+    log "Uploading test PDFs to input PVC..."
+    DEPLOY_SCRIPT="$REPO_ROOT/examples/openshift/k8s/deploy.sh"
+    ASSETS_DIR="$SCRIPT_DIR/assets"
+    if [ -x "$DEPLOY_SCRIPT" ] && [ -d "$ASSETS_DIR" ]; then
+        "$DEPLOY_SCRIPT" upload "$ASSETS_DIR"
+        pass "Test assets uploaded"
+    else
+        warn "Could not auto-upload test assets (deploy.sh or assets/ not found)"
+        warn "Upload manually: ./k8s/deploy.sh upload ./tests/assets/"
+    fi
+else
+    echo "  PVCs: docling-input and docling-output found"
+fi
 
 # ============================================================================
 # Deploy SparkApplication (Docling Spark)

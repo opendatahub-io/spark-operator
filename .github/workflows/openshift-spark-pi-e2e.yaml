@@ -56,23 +56,13 @@ jobs:
       # Step 3: Run operator install test (keep operator for Spark Pi test)
       # ======================================================================
       - name: Run operator install test
-        working-directory: examples/openshift/tests
-        run: |
-          echo "Running operator install test..."
-          chmod +x test-operator-install.sh
-          CLEANUP=false ./test-operator-install.sh
+        run: CLEANUP=false make -C examples/openshift operator-install
 
       # ======================================================================
       # Step 4: Run Spark Pi test
       # ======================================================================
       - name: Run Spark Pi test
-        working-directory: examples/openshift/tests
-        run: |
-          echo "Running Spark Pi test..."
-          chmod +x test-spark-pi.sh
-          ./test-spark-pi.sh
-
-      # Note: No explicit cleanup step needed - Kind cluster deletion handles it
+        run: make -C examples/openshift test-spark-pi
 
       # ======================================================================
       # Debug: Show cluster state on failure
