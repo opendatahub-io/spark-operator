@@ -13,6 +13,7 @@ namespace: opendatahub
 # 2. Import base configuration
 resources:
   - ../../default # Inherits everything from config/default/
+  - networkpolicy.yaml
 
 # 3. Delete the Namespace resource (ODH operator manages it)
 patches:

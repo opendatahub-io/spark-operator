@@ -13,6 +13,7 @@ namespace: redhat-ods-applications
 # 2. Import base configuration
 resources:
   - ../../default   # Inherits everything from config/default/
+  - networkpolicy.yaml
 
 # 3. Delete the Namespace resource (RHOAI operator manages it)
 patches:
