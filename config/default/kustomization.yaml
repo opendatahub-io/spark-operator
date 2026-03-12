@@ -15,6 +15,7 @@ resources:
   - ../rbac
   - ../manager
   - ../webhook
+  - ../networkpolicy.yaml
 
 # Labels applied to all resources
 labels:
