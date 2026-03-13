@@ -88,6 +88,12 @@ echo "  Spark Operator: Found"
 pass "Pre-flight checks passed"
 
 # ============================================================================
+# Setup: Create namespace
+# ============================================================================
+log "Creating namespace '$APP_NAMESPACE' if not exists..."
+kubectl create namespace "$APP_NAMESPACE" --dry-run=client -o yaml | kubectl apply -f -
+
+# ============================================================================
 # Deploy SparkApplication (Pi Example)
 # ============================================================================
 log "Deploying Spark Pi application..."

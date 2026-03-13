@@ -104,7 +104,6 @@ pass "Pre-flight checks passed"
 log "Creating namespace '$APP_NAMESPACE' if not exists..."
 kubectl create namespace "$APP_NAMESPACE" --dry-run=client -o yaml | kubectl apply -f -
 
-
 # ============================================================================
 # Deploy SparkApplication (Docling Spark)
 # ============================================================================
