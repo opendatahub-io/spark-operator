@@ -87,18 +87,6 @@ oc exec -n spark-operator $POD -- id
 # Expected: uid=1000xxx gid=0(root) groups=0(root),1000xxx
 ```
 
-### Admission Control Policy
-
-To prevent users from setting `fsGroup` in SparkApplication specs, install a ValidatingAdmissionPolicy:
-
-```bash
-# As cluster admin
-oc apply -f examples/openshift/k8s/base/validating-admission-policy.yaml
-oc apply -f examples/openshift/k8s/base/validating-admission-policy-binding.yaml
-```
-
-> Note: To Disable the policy: `oc delete validatingadmissionpolicybinding deny-fsgroup-in-sparkapplication-binding`
-
 ## 3. SparkApplication CRD
 
 The **SparkApplication** Custom Resource Definition (CRD) is the core abstraction provided by the operator. It allows you to define Spark applications declaratively using Kubernetes YAML manifests, similar to how you define Deployments or Pods.
@@ -140,7 +128,7 @@ spec:
   driver:
     cores: 1
     memory: "4g"
-    serviceAccount: spark-operator-spark  # Or spark-driver if using custom RBAC
+    serviceAccount: spark-operator-spark
     securityContext: {}
   executor:
     cores: 1
@@ -209,10 +197,7 @@ Expected output:
 persistentvolumeclaim/docling-input created
 persistentvolumeclaim/docling-output created
 
-3. Installing ValidatingAdmissionPolicy (optional)...
-   ⚠️  Skipping (requires cluster-admin). Install manually if needed.
-
-4. Submitting Spark Application...
+3. Submitting Spark Application...
 sparkapplication.sparkoperator.k8s.io/docling-spark-job created
 
 [OK] Deployment complete!

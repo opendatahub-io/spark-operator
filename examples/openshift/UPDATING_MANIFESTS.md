@@ -265,10 +265,6 @@ Use this checklist for each sync:
 - [ ] `config/overlays/rhoai/kustomization.yaml` - update if needed
 - [ ] `config/overlays/rhoai/params.env` - update OPERATOR_VERSION
 
-### Optional: examples/openshift/k8s/base/
-- [ ] `rbac.yaml` - check if spark driver permissions need updates
-- [ ] `validating-admission-policy.yaml` - usually unchanged
-
 ### Tests
 - [ ] All tests pass: `./test-operator-install.sh`
 - [ ] Spark Pi test passes: `./test-spark-pi.sh`
@@ -296,7 +292,6 @@ Use this checklist for each sync:
 | `config/default/kustomization.yaml` | Custom | Main entry point, update image tag |
 | `config/overlays/odh/*` | Custom | ODH overlay (namespace: opendatahub) |
 | `config/overlays/rhoai/*` | Custom | RHOAI overlay (namespace: redhat-ods-applications) |
-| `examples/openshift/k8s/base/*` | Custom | Optional custom ServiceAccount |
 
 ### Auto-Generated Files (CI Requirements)
 
