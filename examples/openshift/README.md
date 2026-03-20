@@ -237,7 +237,6 @@ sparkapplication.sparkoperator.k8s.io/docling-spark-job created
    oc port-forward -n spark-operator svc/docling-spark-job-ui-svc 4040:4040
    Open: http://localhost:4040
 
-   Note: The service only exists while the SparkApplication is running
 ```
 
 > **Note:** On subsequent runs, you'll see `unchanged` instead of `created` for resources that already exist.
