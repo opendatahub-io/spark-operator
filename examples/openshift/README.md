@@ -191,7 +191,7 @@ Make the script executable (first time only)
 chmod +x examples/openshift/k8s/deploy.sh
 ```
 
-# Upload your PDF files to the input PVC
+Upload your PDF files to the input PVC
 ```bash
 ./examples/openshift/k8s/deploy.sh upload ./examples/openshift/tests/assets/
 ```
