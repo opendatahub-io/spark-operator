@@ -46,7 +46,9 @@ oc login
 
 **Option A — Using Make (recommended):**
 
-The Makefile provides a single command that installs the operator, verifies the deployment (pods ready, non-root UID, fsGroup != 185), and optionally cleans up. Note this keeps operator running for subsequent use.
+The Makefile provides a single command that installs the operator, verifies the deployment (pods ready, non-root UID, fsGroup != 185), and optionally cleans up. 
+
+Note: this keeps operator running for subsequent use.
 ```bash
 CLEANUP=false make -C examples/openshift operator-install
 ```
