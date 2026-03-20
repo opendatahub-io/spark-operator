@@ -205,7 +205,7 @@ The deploy script creates PVCs and submits the SparkApplication in the operator 
 ./examples/openshift/k8s/deploy.sh
 ```
 
-Expected output:
+Expected output (note the Spark UI only exists while the SparkApplication is running):
 
 ```text
 ==============================================
@@ -239,7 +239,8 @@ sparkapplication.sparkoperator.k8s.io/docling-spark-job created
 
 ```
 
-> **Note:** On subsequent runs, you'll see `unchanged` instead of `created` for resources that already exist.
+> **Note:** On subsequent runs, you'll see `unchanged` instead of `created` for resources that already exist. 
+
 
 ### Step 3: Monitor the Job
 
@@ -278,8 +279,9 @@ oc get pods -n spark-operator \
   -l spark-role=executor \
   --field-selector=status.phase=Running \
   -o name \
+| grep 'exec-1$' \
+| head -n 1 \
 | xargs -r -I{} oc logs -n spark-operator {} --all-containers=true -f
-oc logs docling-spark-job-exec-1 -n spark-operator
 ```
 
 #### SparkApplication Status
