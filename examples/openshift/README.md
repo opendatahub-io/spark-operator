@@ -37,8 +37,8 @@ cd spark-operator
 
 #### 2. Login to OpenShift
 
+OpenShiftLog in to your Red Hat OpenShift cluster
 ```bash
-# Log in to your Red Hat OpenShift cluster
 oc login 
 ```
 
@@ -46,10 +46,8 @@ oc login
 
 **Option A — Using Make (recommended):**
 
-The Makefile provides a single command that installs the operator, verifies the deployment (pods ready, non-root UID, fsGroup != 185), and optionally cleans up:
-
+The Makefile provides a single command that installs the operator, verifies the deployment (pods ready, non-root UID, fsGroup != 185), and optionally cleans up. Note this keeps operator running for subsequent use.
 ```bash
-# Install and verify (keeps operator running for subsequent use)
 CLEANUP=false make -C examples/openshift operator-install
 ```
 
@@ -78,7 +76,8 @@ If you used `make operator-install`, verification is already done for you (the s
 
 ```bash
 oc get pods -n spark-operator -l app.kubernetes.io/name=spark-operator
-
+```
+```text
 # Expected output:
 # NAME                                        READY   STATUS    RESTARTS   AGE
 # spark-operator-controller-xxx               1/1     Running   0          1m
@@ -91,6 +90,9 @@ Confirm that the `restricted-v2` SCC is assigned:
 
 ```bash
 oc describe pod -n spark-operator -l app.kubernetes.io/component=controller | grep -i openshift.io/scc
+```
+
+```text
 # Expected: openshift.io/scc: restricted-v2
 ```
 
@@ -99,6 +101,8 @@ Verify the container runs with a non-root UID:
 ```bash
 POD=$(oc get pod -n spark-operator -l app.kubernetes.io/component=controller -o jsonpath='{.items[0].metadata.name}')
 oc exec -n spark-operator $POD -- id
+```
+```text
 # Expected: uid=1000xxx gid=0(root) groups=0(root),1000xxx
 ```
 
@@ -180,13 +184,16 @@ This section uses the **pre-built image** `quay.io/rishasin/docling-spark:latest
 
 ### Step 1: Upload Your PDFs
 
+Make the script executable (first time only)
 ```bash
-# Make the script executable (first time only)
 chmod +x examples/openshift/k8s/deploy.sh
+```
 
 # Upload your PDF files to the input PVC
-./examples/openshift/k8s/deploy.sh upload ./path/to/your/pdfs/
+```bash
+./examples/openshift/k8s/deploy.sh upload ./examples/openshift/tests/assets/
 ```
+Note, Note you can specify your own path of pdfs by passing in your own path (e.g., `./path/to/your/pdfs/`
 
 
 ### Step 2: Run the Spark Job
@@ -227,6 +234,8 @@ sparkapplication.sparkoperator.k8s.io/docling-spark-job created
 🌐 Access Spark UI (when driver is running):
    oc port-forward -n spark-operator svc/docling-spark-job-ui-svc 4040:4040
    Open: http://localhost:4040
+
+   Note: The service only exists while the SparkApplication is running
 ```
 
 > **Note:** On subsequent runs, you'll see `unchanged` instead of `created` for resources that already exist.
@@ -234,8 +243,8 @@ sparkapplication.sparkoperator.k8s.io/docling-spark-job created
 ### Step 3: Monitor the Job
 
 #### Watch pods
+Adjust namespace based on your deployment
 ```bash
-# adjust namespace based on your deployment
 oc get pods -n spark-operator -w
 ```
 
@@ -261,22 +270,30 @@ Once the Driver pod is created, check its logs for Spark-specific initialization
 
 ```bash
 oc logs docling-spark-job-driver -n spark-operator
+```
+After the executor pods are created, you can view the logs via: 
+```bash
+oc get pods -n spark-operator \
+  -l spark-role=executor \
+  --field-selector=status.phase=Running \
+  -o name \
+| xargs -r -I{} oc logs -n spark-operator {} --all-containers=true -f
 oc logs docling-spark-job-exec-1 -n spark-operator
 ```
 
 #### SparkApplication Status
 Inspect the status of the CRD to see if the operator encountered validation errors or submission failures:
 
+Note: Adjust the namespace based on your deployment
 ```bash
-# Adjust namespace based on your deployment
 oc describe sparkapplication docling-spark-job -n spark-operator
 ```
 
 ### Step 4: Download the Results
 
+Note: Adjust the namespace based on your deployment
 First, delete the SparkApplication to release the output PVC:
 ```bash
-# Adjust namespace based on your deployment
 oc delete sparkapplication docling-spark-job -n spark-operator
 ```
 
@@ -316,12 +333,18 @@ pod "pvc-downloader" deleted
 
 View results:
 ```bash
-cat ./output/summary.jsonl
+cat ./examples/openshift/output/summary.jsonl
 ```
 
 ## 6: Access Spark UI (Optional)
 
-While the driver is running:
+The Spark UI is only available **while the SparkApplication is actively running**. The UI service (`docling-spark-job-ui-svc`) is automatically created when the driver pod starts and deleted when the job completes.
+
+**Prerequisites:**
+- A SparkApplication must be running (driver pod in `Running` status)
+- Check with: `oc get pods -n spark-operator -l spark-role=driver`
+
+**Access the UI:**
 ```bash
 # Adjust namespace based on your deployment
 oc port-forward -n spark-operator svc/docling-spark-job-ui-svc 4040:4040
