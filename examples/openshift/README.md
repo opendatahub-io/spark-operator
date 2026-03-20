@@ -195,7 +195,7 @@ Upload your PDF files to the input PVC
 ```bash
 ./examples/openshift/k8s/deploy.sh upload ./examples/openshift/tests/assets/
 ```
-Note, Note you can specify your own path of pdfs by passing in your own path (e.g., `./path/to/your/pdfs/`
+**Note:** You can pass your own PDF directory path (e.g., `./path/to/your/pdfs/`)
 
 
 ### Step 2: Run the Spark Job
