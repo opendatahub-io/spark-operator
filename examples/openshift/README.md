@@ -37,7 +37,7 @@ cd spark-operator
 
 #### 2. Login to OpenShift
 
-OpenShiftLog in to your Red Hat OpenShift cluster
+Log in to your Red Hat OpenShift cluster
 ```bash
 oc login 
 ```
