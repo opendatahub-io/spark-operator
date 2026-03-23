@@ -112,10 +112,6 @@ jobs:
     runs-on: ${{ needs.launch-ec2-runner.outputs.label }}
     env:
       K8S_VERSION: ${{ inputs.k8s_version || 'v1.30.8' }}
-      # Go environment
-      GOPATH: ${{ github.workspace }}/go
-      GOMODCACHE: ${{ github.workspace }}/go/pkg/mod
-      GOCACHE: ${{ github.workspace }}/go/cache
       # Home and Kubernetes config (EC2 runner may not have HOME set)
       HOME: ${{ github.workspace }}/home
       KUBECONFIG: ${{ github.workspace }}/home/.kube/config
@@ -142,22 +138,7 @@ jobs:
           fetch-depth: 0
 
       # ======================================================================
-      # Step 2: Set up Go
-      # ======================================================================
-      - name: Set up Go
-        uses: actions/setup-go@4dc6199c7b1a012772edbd06daecab0f50c9053c # v6
-        with:
-          go-version-file: go.mod
-
-      - name: Setup Go environment
-        run: |
-          mkdir -p $GOPATH/bin $GOMODCACHE $GOCACHE
-          echo "$GOPATH/bin" >> $GITHUB_PATH
-          go version
-          go env
-
-      # ======================================================================
-      # Step 3: Install dependencies (docker, make, kubectl, helm, kind)
+      # Step 2: Install dependencies (docker, make, kubectl, kind)
       # The EC2 runner AMI doesn't have these pre-installed
       # ======================================================================
       - name: Install dependencies
@@ -189,10 +170,6 @@ jobs:
           sudo install -o root -g root -m 0755 kubectl /usr/local/bin/kubectl
           kubectl version --client
 
-          echo "Installing Helm..."
-          curl -fsSL https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
-          helm version
-
           echo "Installing Kind..."
           curl -Lo ./kind https://kind.sigs.k8s.io/dl/v0.31.0/kind-linux-amd64
           sudo install -o root -g root -m 0755 kind /usr/local/bin/kind
@@ -201,7 +178,7 @@ jobs:
           echo "All dependencies installed successfully!"
 
       # ======================================================================
-      # Step 4: Free up disk space
+      # Step 3: Free up disk space
       # The docling-spark image is very large (~9.5GB), need space
       # ======================================================================
       - name: Free up disk space
@@ -218,7 +195,7 @@ jobs:
           df -h
 
       # ======================================================================
-      # Step 5: Create Kind cluster, load docling image, upload test PDFs
+      # Step 4: Create Kind cluster, load docling image, upload test PDFs
       # Uses the standardized make target for full setup
       # ======================================================================
       - name: Setup Kind cluster with docling image and test data
@@ -229,7 +206,7 @@ jobs:
         run: make -C examples/openshift kind-setup-full
 
       # ======================================================================
-      # Step 6: Verify cluster is ready
+      # Step 5: Verify cluster is ready
       # ======================================================================
       - name: Verify cluster
         run: |
@@ -240,19 +217,19 @@ jobs:
           echo "Cluster is ready!"
 
       # ======================================================================
-      # Step 7: Install Spark operator via Kustomize
+      # Step 6: Install Spark operator via Kustomize
       # ======================================================================
       - name: Install Spark operator
         run: CLEANUP=false make -C examples/openshift operator-install
 
       # ======================================================================
-      # Step 8: Run Docling Spark E2E test (shell-based)
+      # Step 7: Run Docling Spark E2E test
       # ======================================================================
       - name: Run Docling Spark E2E test
         run: CLEANUP=false make -C examples/openshift test-docling-spark
 
       # ======================================================================
-      # Step 9: Download and show results
+      # Step 8: Download and show results
       # Multi-output format produces per-PDF files:
       #   - {name}.md          (markdown content)
       #   - {name}.json        (docling JSON format)
@@ -360,19 +337,7 @@ jobs:
           fi
 
       # ======================================================================
-      # Step 12: Cleanup namespaces
-      # Since we skipped namespace cleanup in tests (SKIP_NAMESPACE_CLEANUP=true),
-      # we clean them up here after downloading results
-      # ======================================================================
-      - name: Cleanup namespaces
-        if: always()
-        run: |
-          echo "Cleaning up namespaces..."
-          kubectl delete namespace spark-operator --ignore-not-found --wait=false || true
-          echo "✅ Namespace cleanup initiated"
-
-      # ======================================================================
-      # Step 13: Collect logs on failure
+      # Step 10: Collect logs on failure
       # ======================================================================
       - name: Collect logs on failure
         if: failure()
@@ -409,14 +374,11 @@ jobs:
           kubectl get events -A --sort-by='.lastTimestamp' | tail -50
 
       # ======================================================================
-      # Step 14: Cleanup Kind cluster
+      # Step 11: Cleanup Kind cluster
       # ======================================================================
       - name: Cleanup Kind cluster
         if: always()
-        run: |
-          echo "Cleaning up Kind cluster..."
-          chmod +x examples/openshift/tests/cleanup-kind-cluster.sh
-          examples/openshift/tests/cleanup-kind-cluster.sh || true
+        run: make -C examples/openshift kind-cleanup || true
 
   # ============================================================================
   # Job 3: Stop EC2 Runner
