@@ -78,6 +78,40 @@ test-docling-spark: ## Run Docling Spark test on KIND or OpenShift.
 	chmod +x $(TESTS_DIR)/test-docling-spark.sh
 	CLEANUP=$(CLEANUP) $(TESTS_DIR)/test-docling-spark.sh
 
+.PHONY: test-crds
+test-crds: ## Verify CRDs are correctly installed.
+	@echo "Running CRD verification tests..."
+	chmod +x $(TESTS_DIR)/test-crds.sh
+	$(TESTS_DIR)/test-crds.sh
+
+.PHONY: test-webhooks
+test-webhooks: ## Verify webhooks are functional.
+	@echo "Running webhook validation tests..."
+	chmod +x $(TESTS_DIR)/test-webhook-validation.sh
+	$(TESTS_DIR)/test-webhook-validation.sh
+
+.PHONY: test-submission-failure
+test-submission-failure: ## Test submission failure handling with retries.
+	@echo "Running submission failure test..."
+	chmod +x $(TESTS_DIR)/test-submission-failure.sh
+	CLEANUP=$(CLEANUP) $(TESTS_DIR)/test-submission-failure.sh
+
+.PHONY: test-application-failure
+test-application-failure: ## Test application failure handling with retries.
+	@echo "Running application failure test..."
+	chmod +x $(TESTS_DIR)/test-application-failure.sh
+	CLEANUP=$(CLEANUP) $(TESTS_DIR)/test-application-failure.sh
+
+.PHONY: test-kustomize-e2e
+test-kustomize-e2e: ## Run the full Kustomize E2E test suite.
+	@echo "Running full Kustomize E2E test suite..."
+	$(MAKE) operator-install CLEANUP=false
+	$(MAKE) test-crds
+	$(MAKE) test-webhooks
+	$(MAKE) test-spark-pi CLEANUP=false
+	$(MAKE) test-submission-failure CLEANUP=false
+	$(MAKE) test-application-failure
+
 .PHONY: test-all
 test-all: ## Run all tests (operator-install, spark-pi, docling).
 	@echo "Running all OpenShift/KIND tests..."

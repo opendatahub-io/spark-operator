@@ -5,10 +5,18 @@
 #
 # Usage in workflow:
 #   - uses: ./.github/actions/kind-cluster-setup
+#     with:
+#       k8s_version: v1.30.8  # optional, defaults to v1.32.0
 # ============================================================================
 
 name: 'OpenShift Cluster Setup'
 description: 'Setup Kind cluster with Helm and kubectl for OpenShift E2E tests'
+
+inputs:
+  k8s_version:
+    description: 'Kubernetes version for Kind cluster (e.g., v1.30.8)'
+    required: false
+    default: 'v1.32.0'
 
 runs:
   using: 'composite'
@@ -50,6 +58,7 @@ runs:
       uses: helm/kind-action@v1
       with:
         cluster_name: spark-operator
+        node_image: kindest/node:${{ inputs.k8s_version }}
 
     # ======================================================================
     # Step 5: Verify cluster is ready

@@ -1,0 +1,150 @@
+# ============================================================================
+# Kustomize E2E Tests
+# ============================================================================
+#
+# Runs E2E tests using Kustomize manifests for operator installation.
+# This is the Kustomize-based counterpart to the Helm-based E2E tests
+# in integration.yaml, and runs on every PR to ensure Kustomize manifests
+# work correctly across Kubernetes versions.
+#
+# Tests performed:
+#   1. Installs Spark Operator via Kustomize (config/default/)
+#   2. Verifies CRDs are installed and Established
+#   3. Verifies webhooks are functional (CA bundles, validation)
+#   4. Runs Spark Pi test
+#   5. Verifies submission failure handling with retries
+#   6. Verifies application failure handling with retries
+#
+# Runs on: Default GitHub runner (ubuntu-latest)
+#
+# ============================================================================
+
+name: Kustomize E2E Test
+
+on:
+  pull_request:
+    branches:
+      - master
+      - release-*
+      - main
+    paths:
+      - 'config/**'
+      - 'examples/openshift/**'
+      - '.github/workflows/kustomize-e2e.yaml'
+      - '.github/actions/kind-cluster-setup/**'
+
+  push:
+    branches:
+      - master
+      - release-*
+      - main
+    paths:
+      - 'config/**'
+      - 'examples/openshift/**'
+      - '.github/workflows/kustomize-e2e.yaml'
+      - '.github/actions/kind-cluster-setup/**'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}-${{ github.actor }}
+  cancel-in-progress: true
+
+jobs:
+  kustomize-e2e:
+    name: Kustomize E2E (K8s ${{ matrix.k8s_version }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        k8s_version:
+          - v1.28.15
+          - v1.30.8
+          - v1.32.0
+
+    steps:
+      # ======================================================================
+      # Step 1: Checkout code
+      # ======================================================================
+      - name: Checkout source code
+        uses: actions/checkout@v4
+
+      # ======================================================================
+      # Step 2: Setup Kind cluster (using composite action)
+      # ======================================================================
+      - name: Setup Kind cluster
+        uses: ./.github/actions/kind-cluster-setup
+        with:
+          k8s_version: ${{ matrix.k8s_version }}
+
+      # ======================================================================
+      # Step 3: Install operator via Kustomize
+      # ======================================================================
+      - name: Install Spark Operator via Kustomize
+        run: CLEANUP=false make -C examples/openshift operator-install
+
+      # ======================================================================
+      # Step 4: Verify CRDs
+      # ======================================================================
+      - name: Test CRDs
+        run: make -C examples/openshift test-crds
+
+      # ======================================================================
+      # Step 5: Verify webhooks
+      # ======================================================================
+      - name: Test Webhooks
+        run: make -C examples/openshift test-webhooks
+
+      # ======================================================================
+      # Step 6: Run Spark Pi happy-path test
+      # ======================================================================
+      - name: Test Spark Pi
+        run: make -C examples/openshift test-spark-pi
+
+      # ======================================================================
+      # Step 7: Test submission failure handling
+      # ======================================================================
+      - name: Test Submission Failure
+        run: make -C examples/openshift test-submission-failure
+
+      # ======================================================================
+      # Step 8: Test application failure handling
+      # ======================================================================
+      - name: Test Application Failure
+        run: make -C examples/openshift test-application-failure
+
+      # ======================================================================
+      # Debug: Show cluster state on failure
+      # ======================================================================
+      - name: Debug - Show cluster state
+        if: failure()
+        run: |
+          echo "=== Pods in all namespaces ==="
+          kubectl get pods -A
+
+          echo ""
+          echo "=== SparkApplications ==="
+          kubectl get sparkapplications -A -o yaml 2>/dev/null || echo "No SparkApplications found"
+
+          echo ""
+          echo "=== Operator Deployments ==="
+          kubectl get deployments -n spark-operator -o wide 2>/dev/null || true
+
+          echo ""
+          echo "=== Webhook Configurations ==="
+          kubectl get mutatingwebhookconfiguration spark-operator-webhook -o yaml 2>/dev/null || echo "No MutatingWebhookConfiguration"
+          kubectl get validatingwebhookconfiguration spark-operator-webhook -o yaml 2>/dev/null || echo "No ValidatingWebhookConfiguration"
+
+          echo ""
+          echo "=== Events ==="
+          kubectl get events -A --sort-by='.lastTimestamp' | tail -50
+
+          echo ""
+          echo "=== Controller logs ==="
+          kubectl logs -n spark-operator -l app.kubernetes.io/component=controller --tail=150 2>/dev/null || echo "No controller logs"
+
+          echo ""
+          echo "=== Webhook logs ==="
+          kubectl logs -n spark-operator -l app.kubernetes.io/component=webhook --tail=150 2>/dev/null || echo "No webhook logs"
