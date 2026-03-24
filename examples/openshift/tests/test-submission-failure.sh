@@ -39,7 +39,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 APP_NAMESPACE="${APP_NAMESPACE:-spark-operator}"
 APP_NAME="${APP_NAME:-fail-submission-test}"
 TIMEOUT_SECONDS="${TIMEOUT_SECONDS:-300}"
-SPARK_IMAGE="${SPARK_IMAGE:-quay.io/rishasin/docling-spark:latest}"
+SPARK_IMAGE="${SPARK_IMAGE:-quay.io/rishasin/docling-spark@sha256:7e8431fc89dbc6c10aec1f0401aadd9c9cd66b9728fbcb98f6bf40ba3e3b4cdb}"
 APP_YAML="${APP_YAML:-$SCRIPT_DIR/fixtures/fail-submission-app.yaml}"
 EXPECTED_RETRIES=2
 
@@ -127,7 +127,7 @@ while [ $SECONDS -lt $TIMEOUT_SECONDS ]; do
         LAST_STATE="$STATE"
     fi
 
-    if [ "$STATE" = "FAILED_SUBMISSION" ]; then
+    if [ "$STATE" = "SUBMISSION_FAILED" ]; then
         SAW_FAILED_SUBMISSION=true
     fi
 
@@ -155,11 +155,11 @@ fi
 # ============================================================================
 log "Verifying failure behavior..."
 
-# Check that we saw FailedSubmission states during retries
+# Check that we saw SUBMISSION_FAILED states during retries
 if [ "$SAW_FAILED_SUBMISSION" = "true" ]; then
-    echo "  Observed FAILED_SUBMISSION state during retries"
+    echo "  Observed SUBMISSION_FAILED state during retries"
 else
-    warn "Did not observe FAILED_SUBMISSION intermediate state"
+    warn "Did not observe SUBMISSION_FAILED intermediate state"
 fi
 
 # Verify error message

@@ -9,7 +9,7 @@ metadata:
 spec:
   type: Scala
   mode: cluster
-  image: quay.io/rishasin/docling-spark:latest
+  image: quay.io/rishasin/docling-spark@sha256:7e8431fc89dbc6c10aec1f0401aadd9c9cd66b9728fbcb98f6bf40ba3e3b4cdb
   imagePullPolicy: IfNotPresent
   mainClass: org.apache.spark.examples.SparkPi
   mainApplicationFile: local:///opt/spark/examples/jars/spark-examples_2.12-3.5.7.jar

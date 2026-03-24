@@ -17,7 +17,7 @@ KIND_CONFIG_FILE="${KIND_CONFIG_FILE:-$REPO_ROOT/charts/spark-operator-chart/ci/
 KIND_KUBE_CONFIG="${KIND_KUBE_CONFIG:-$HOME/.kube/config}" # Kind kubeconfig file where connection credentials are stored
 K8S_VERSION="${K8S_VERSION:-v1.32.0}" # Kubernetes version
 SPARK_NAMESPACE="${SPARK_NAMESPACE:-spark-operator}" # Namespace for Spark Operator and apps
-DOCLING_IMAGE="${DOCLING_IMAGE:-quay.io/rishasin/docling-spark:latest}" # Docling Spark image
+DOCLING_IMAGE="${DOCLING_IMAGE:-quay.io/rishasin/docling-spark@sha256:7e8431fc89dbc6c10aec1f0401aadd9c9cd66b9728fbcb98f6bf40ba3e3b4cdb}" # Docling Spark image
 
 export KUBECONFIG="$KIND_KUBE_CONFIG"
 

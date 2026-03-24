@@ -13,7 +13,11 @@ The Makefile at `examples/openshift/Makefile` provides standardized make targets
 | Test | What It Validates |
 |------|-------------------|
 | **Operator Install** | Kustomize manifests work, fsGroup ≠ 185, non-root UID |
+| **CRDs** | All 3 CRDs exist, are Established, serve expected API versions |
+| **Webhooks** | Mutating/Validating webhook configs have CA bundles, endpoints healthy, invalid resources rejected |
 | **Spark Pi** | SparkApplication CRD works, Driver/Executor pods run, job completes |
+| **Submission Failure** | Submission failure retries work, no driver pod created, correct attempt count |
+| **Application Failure** | Application failure retries work, driver pod created, correct attempt count |
 | **Docling Spark** | PDF-to-markdown conversion, PVC storage, multi-executor workload |
 
 ---
@@ -65,17 +69,22 @@ CLEANUP=false make operator-install
 
 ### Step 3: Run Tests
 
-**Run Spark Pi test (shell script):**
+**Run the full Kustomize E2E suite:**
 ```bash
-make test-spark-pi
+make test-kustomize-e2e
 ```
 
-**Run Docling Spark test:**
+**Or run individual tests:**
 ```bash
-make test-docling-spark
+make test-crds                   # Verify CRDs
+make test-webhooks               # Verify webhooks
+make test-spark-pi               # Spark Pi happy path
+make test-submission-failure     # Submission failure retries
+make test-application-failure    # Application failure retries
+make test-docling-spark          # Docling Spark workload (requires kind-setup-full)
 ```
 
-**Run all tests:**
+**Run all tests (including docling):**
 ```bash
 make test-all
 ```
@@ -96,8 +105,13 @@ make kind-cleanup
 | `make kind-setup-full` | Setup Kind + pull docling image + upload test PDFs |
 | `make kind-cleanup` | Delete Kind cluster and cleanup resources |
 | `make operator-install` | Install Spark operator (auto-runs `kind-setup` if no cluster) |
+| `make test-crds` | Verify CRDs are installed, Established, and discoverable |
+| `make test-webhooks` | Verify webhooks have CA bundles, healthy endpoints, reject invalid resources |
 | `make test-spark-pi` | Run Spark Pi test (auto-runs `operator-install` if needed) |
+| `make test-submission-failure` | Test submission failure handling with retries |
+| `make test-application-failure` | Test application failure handling with retries |
 | `make test-docling-spark` | Run Docling Spark test (auto-runs `operator-install` if needed) |
+| `make test-kustomize-e2e` | Run full Kustomize E2E suite (install + CRDs + webhooks + spark-pi + failure tests) |
 | `make test-all` | Run all tests (operator-install + spark-pi + docling) |
 
 ---
@@ -123,6 +137,7 @@ CLEANUP=false make test-spark-pi
 | `K8S_VERSION` | `v1.32.0` | Kubernetes version for Kind |
 | `KIND_KUBE_CONFIG` | `~/.kube/config` | Kubeconfig file path |
 | `TIMEOUT_SECONDS` | `600` | Max wait time for shell tests |
+| `SPARK_IMAGE` | `quay.io/rishasin/docling-spark@sha256:7e8...` | Spark image (pinned digest) used in test fixtures |
 
 ### Examples
 
@@ -133,10 +148,16 @@ KIND_CLUSTER_NAME=spark-test K8S_VERSION=v1.30.8 make kind-setup
 # Keep resources for debugging
 CLEANUP=false make test-spark-pi
 
-# Run full test suite
+# Run full Kustomize E2E suite
+make test-kustomize-e2e
+
+# Run full test suite step by step
 CLEANUP=false make operator-install
+make test-crds
+make test-webhooks
 CLEANUP=false make test-spark-pi
-make test-docling-spark
+CLEANUP=false make test-submission-failure
+make test-application-failure
 ```
 
 ---
@@ -151,6 +172,22 @@ Validates:
 3. Container runs with non-root UID
 4. Controller and Webhook pods are Ready
 
+### test-crds.sh
+
+Validates:
+1. All 3 CRDs exist (`sparkapplications`, `scheduledsparkapplications`, `sparkconnects`)
+2. Each CRD has `Established=True` condition
+3. CRDs serve expected API versions (`v1beta2` for SparkApplication/ScheduledSparkApplication, `v1alpha1` for SparkConnect)
+4. All API resources are discoverable via `kubectl api-resources`
+
+### test-webhook-validation.sh
+
+Validates:
+1. `MutatingWebhookConfiguration` exists with CA bundles injected
+2. `ValidatingWebhookConfiguration` exists with CA bundles injected
+3. Webhook Service (`spark-operator-webhook-svc`) has healthy endpoints
+4. Validating webhook rejects an invalid SparkApplication (DNS-1035 name violation)
+
 ### test-spark-pi.sh
 
 Validates:
@@ -159,6 +196,23 @@ Validates:
 3. Executor pods are created
 4. Application completes successfully
 5. Pi calculation result appears in logs
+
+### test-submission-failure.sh
+
+Validates:
+1. SparkApplication with non-existent ServiceAccount triggers submission failure
+2. Operator retries submission (`onSubmissionFailureRetries: 2`)
+3. Final state is `FAILED` with correct `submissionAttempts` count (3)
+4. No driver pod is created (failure happens before pod creation)
+
+### test-application-failure.sh
+
+Validates:
+1. SparkApplication with non-existent mainClass/jar triggers application failure
+2. Operator retries execution (`onFailureRetries: 2`)
+3. Final state is `FAILED` with correct `executionAttempts` count (3)
+4. Driver pod is created (submission succeeds, application fails at runtime)
+5. Error messages appear in driver logs
 
 ### test-docling-spark.sh
 
@@ -172,7 +226,11 @@ Validates:
 
 ## GitHub Actions Integration
 
-These make targets are designed to work in GitHub Actions CI. Example workflow usage:
+These make targets are designed to work in GitHub Actions CI. There are two workflows:
+
+### Kustomize E2E Workflow (`.github/workflows/kustomize-e2e.yaml`)
+
+Runs on **every PR** (no path filtering) against a Kubernetes version matrix (`v1.28.15`, `v1.30.8`, `v1.32.0`). Tests CRDs, webhooks, Spark Pi, and failure handling:
 
 ```yaml
 - name: Setup Kind cluster
@@ -181,16 +239,29 @@ These make targets are designed to work in GitHub Actions CI. Example workflow u
 - name: Install operator
   run: CLEANUP=false make -C examples/openshift operator-install
 
+- name: Run CRD tests
+  run: make -C examples/openshift test-crds
+
+- name: Run webhook tests
+  run: make -C examples/openshift test-webhooks
+
 - name: Run Spark Pi test
   run: CLEANUP=false make -C examples/openshift test-spark-pi
 
-- name: Run Docling Spark test
-  run: CLEANUP=false make -C examples/openshift test-docling-spark
+- name: Run submission failure test
+  run: CLEANUP=false make -C examples/openshift test-submission-failure
+
+- name: Run application failure test
+  run: make -C examples/openshift test-application-failure
 
 - name: Cleanup
   if: always()
   run: make -C examples/openshift kind-cleanup
 ```
+
+### Existing Integration Workflow (`.github/workflows/integration.yaml`)
+
+Runs Helm-based Go E2E tests.
 
 > **Note:** `make -C examples/openshift` runs make from the repo root but changes to the `examples/openshift/` directory first. Alternatively, `cd examples/openshift && make` works the same way.
 ---
@@ -224,7 +295,11 @@ These make targets are designed to work in GitHub Actions CI. Example workflow u
 | `setup-kind-cluster.sh` | Creates Kind cluster and prerequisites |
 | `cleanup-kind-cluster.sh` | Deletes Kind cluster and resources |
 | `test-operator-install.sh` | Tests operator installation from Kustomize manifests |
-| `test-spark-pi.sh` | Tests Spark Pi application |
-| `test-docling-spark.sh` | Tests Docling Spark workload |
+| `test-crds.sh` | Verifies CRDs are installed, Established, and discoverable |
+| `test-webhook-validation.sh` | Verifies webhooks have CA bundles, healthy endpoints, reject invalid resources |
+| `test-spark-pi.sh` | Tests Spark Pi application (happy path) |
+| `test-submission-failure.sh` | Tests submission failure retries with non-existent ServiceAccount |
+| `test-application-failure.sh` | Tests application failure retries with invalid mainClass/jar |
 | `spark-pi-app.yaml` | SparkApplication manifest for Spark Pi |
+| `fixtures/` | Test fixture YAMLs (invalid SparkApp, failure-triggering apps) |
 | `assets/` | Test PDF files for docling tests |

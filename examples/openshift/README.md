@@ -135,7 +135,7 @@ spec:
   type: Python
   pythonVersion: "3"
   mode: cluster
-  image: quay.io/rishasin/docling-spark:multi-output
+  image: quay.io/rishasin/docling-spark@sha256:7e8431fc89dbc6c10aec1f0401aadd9c9cd66b9728fbcb98f6bf40ba3e3b4cdb
   imagePullPolicy: Always
   mainApplicationFile: local:///app/scripts/run_spark_job.py
   arguments:
@@ -178,7 +178,7 @@ The `docling-spark` application demonstrates a production-grade pattern for proc
 
 ## 5. Deploying the Docling-Spark Application
 
-This section uses the **pre-built image** `quay.io/rishasin/docling-spark:latest` which contains the Docling + PySpark application with all dependencies. The manifest `examples/openshift/k8s/docling-spark-app.yaml` is already configured to use this image.
+This section uses the **pre-built image** `quay.io/rishasin/docling-spark@sha256:7e8431fc89dbc6c10aec1f0401aadd9c9cd66b9728fbcb98f6bf40ba3e3b4cdb` which contains the Docling + PySpark application with all dependencies. The manifest `examples/openshift/k8s/docling-spark-app.yaml` is already configured to use this image.
 
 > **Important:** The Spark job runs in the **same namespace** as the operator. The deploy script uses the `spark-operator-spark` ServiceAccount that is created during operator installation.
 
@@ -369,8 +369,13 @@ The `examples/openshift/Makefile` provides standardized targets that are the sam
 | `make kind-setup-full` | Same as above + pull the docling-spark image (~9.5GB) and upload test PDFs |
 | `make kind-cleanup` | Delete the Kind cluster and all resources |
 | `make operator-install` | Install the Spark operator (auto-creates a Kind cluster if none detected) |
+| `make test-crds` | Verify all 3 CRDs are installed, Established, and discoverable |
+| `make test-webhooks` | Verify mutating/validating webhooks have CA bundles and reject invalid resources |
 | `make test-spark-pi` | Run a lightweight Spark Pi test (auto-installs operator if needed) |
+| `make test-submission-failure` | Test that submission failure retries work correctly |
+| `make test-application-failure` | Test that application failure retries work correctly |
 | `make test-docling-spark` | Run the Docling Spark document conversion test |
+| `make test-kustomize-e2e` | Run the full Kustomize E2E suite (install + CRDs + webhooks + spark-pi + failure tests) |
 | `make test-all` | Run all tests in sequence (operator-install, spark-pi, docling) |
 
 ### Local Kind Testing (Quick Start)
@@ -380,14 +385,19 @@ If you don't have an OpenShift cluster, you can run the full test suite locally 
 ```bash
 cd examples/openshift
 
-# Option 1: Run everything in one command
-make test-all
+# Option 1: Run the Kustomize E2E suite (CRDs, webhooks, spark-pi, failure tests)
+make kind-setup
+make test-kustomize-e2e
+make kind-cleanup
 
 # Option 2: Step by step
 make kind-setup                       # Create Kind cluster
 CLEANUP=false make operator-install   # Install operator (keep it running)
+make test-crds                        # Verify CRDs
+make test-webhooks                    # Verify webhooks
 CLEANUP=false make test-spark-pi      # Run Spark Pi test
-make test-docling-spark               # Run Docling Spark test
+CLEANUP=false make test-submission-failure   # Test submission failure retries
+make test-application-failure         # Test application failure retries
 make kind-cleanup                     # Tear down
 ```
 

@@ -14,7 +14,7 @@ spec:
   type: Python
   pythonVersion: "3"
   mode: cluster
-  image: quay.io/rishasin/docling-spark:multi-output
+  image: quay.io/rishasin/docling-spark@sha256:7e8431fc89dbc6c10aec1f0401aadd9c9cd66b9728fbcb98f6bf40ba3e3b4cdb
   imagePullPolicy: Always
   timeToLiveSeconds: 300  # Pod cleanup delay (results persist on PVC)
   mainApplicationFile: local:///app/scripts/run_spark_job.py

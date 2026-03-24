@@ -38,7 +38,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 APP_NAMESPACE="${APP_NAMESPACE:-spark-operator}"
 APP_NAME="${APP_NAME:-spark-pi}"
 TIMEOUT_SECONDS="${TIMEOUT_SECONDS:-600}"  # 10 minutes should be enough to pull the image and run spark-pi
-SPARK_IMAGE="${SPARK_IMAGE:-quay.io/rishasin/docling-spark:latest}"
+SPARK_IMAGE="${SPARK_IMAGE:-quay.io/rishasin/docling-spark@sha256:7e8431fc89dbc6c10aec1f0401aadd9c9cd66b9728fbcb98f6bf40ba3e3b4cdb}"
 # ============================================================================
 # Helper Functions
 # ============================================================================
