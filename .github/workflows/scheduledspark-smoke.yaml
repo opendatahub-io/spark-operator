@@ -1,0 +1,58 @@
+name: ScheduledSpark Smoke
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'examples/openshift/**'
+      - 'config/**'
+      - '.github/workflows/scheduledspark-smoke.yaml'
+  pull_request:
+    paths:
+      - 'examples/openshift/**'
+      - 'config/**'
+      - '.github/workflows/scheduledspark-smoke.yaml'
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Install oc
+        uses: redhat-actions/oc-installer@v1
+        with:
+          oc_version: 'latest'
+
+      - name: oc login
+        env:
+          OPENSHIFT_SERVER: ${{ inputs.openshift_server }}
+          OPENSHIFT_TOKEN: ${{ inputs.openshift_token }}
+        run: |
+          oc login "${OPENSHIFT_SERVER}" --token="${OPENSHIFT_TOKEN}" --insecure-skip-tls-verify=true
+          oc whoami
+
+      - name: RBAC preflight
+        env:
+          NAMESPACE: ${{ inputs.namespace }}
+          CONTROLLER_SA: spark-operator-controller
+        run: |
+          chmod +x examples/openshift/tests/check-scheduledspark-rbac.sh
+          examples/openshift/tests/check-scheduledspark-rbac.sh
+
+      - name: ScheduledSparkApplication smoke
+        env:
+          NAMESPACE: ${{ inputs.namespace }}
+          SCHED_NAME: rbac-scheduled-smoke
+          TIMEOUT_SECONDS: "180"
+        run: |
+          chmod +x examples/openshift/tests/test-scheduledspark-smoke.sh
+          examples/openshift/tests/test-scheduledspark-smoke.sh
+
