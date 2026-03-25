@@ -26,33 +26,27 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v5
 
+      - name: Setup Kind cluster
+        uses: ./.github/actions/kind-cluster-setup
+
       - name: Install oc
-        uses: redhat-actions/oc-installer@v1
+        uses: redhat-actions/oc-installer@35b60c3f9757ae4301521556e1b75ff6f59f8d7c
         with:
           oc_version: 'latest'
 
-      - name: oc login
-        env:
-          OPENSHIFT_SERVER: ${{ inputs.openshift_server }}
-          OPENSHIFT_TOKEN: ${{ inputs.openshift_token }}
-        run: |
-          oc login "${OPENSHIFT_SERVER}" --token="${OPENSHIFT_TOKEN}" --insecure-skip-tls-verify=true
-          oc whoami
+      - name: Install Spark Operator (keep installed)
+        run: CLEANUP=false make -C examples/openshift operator-install
 
       - name: RBAC preflight
         env:
-          NAMESPACE: ${{ inputs.namespace }}
+          NAMESPACE: spark-operator
           CONTROLLER_SA: spark-operator-controller
-        run: |
-          chmod +x examples/openshift/tests/check-scheduledspark-rbac.sh
-          examples/openshift/tests/check-scheduledspark-rbac.sh
+        run: make -C examples/openshift scheduledspark-rbac-check
 
       - name: ScheduledSparkApplication smoke
         env:
-          NAMESPACE: ${{ inputs.namespace }}
+          NAMESPACE: spark-operator
           SCHED_NAME: rbac-scheduled-smoke
           TIMEOUT_SECONDS: "180"
-        run: |
-          chmod +x examples/openshift/tests/test-scheduledspark-smoke.sh
-          examples/openshift/tests/test-scheduledspark-smoke.sh
+        run: make -C examples/openshift scheduledspark-smoke
 
