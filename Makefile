@@ -360,30 +360,6 @@ helm-docs-plugin: $(HELM_DOCS) ## Download helm-docs plugin locally if necessary
 $(HELM_DOCS): $(LOCALBIN)
 	$(call go-install-tool,$(HELM_DOCS),github.com/norwoodj/helm-docs/cmd/helm-docs,$(HELM_DOCS_VERSION))
 
-.PHONY: openshift-rbac-check
-openshift-rbac-check: ## RBAC preflight for ScheduledSparkApplication (OpenShift)
-	@echo "Running RBAC preflight for ScheduledSparkApplication..."
-	NAMESPACE?=redhat-ods-applications ; \
-	CONTROLLER_SA?=spark-operator-controller ; \
-	chmod +x examples/openshift/tests/check-scheduledspark-rbac.sh ; \
-	NAMESPACE=$${NAMESPACE} CONTROLLER_SA=$${CONTROLLER_SA} \
-		examples/openshift/tests/check-scheduledspark-rbac.sh
-
-.PHONY: openshift-scheduled-smoke
-openshift-scheduled-smoke: ## ScheduledSparkApplication smoke test (OpenShift)
-	@echo "Running ScheduledSparkApplication smoke test..."
-	NAMESPACE?=redhat-ods-applications ; \
-	SCHED_NAME?=rbac-scheduled-smoke ; \
-	TIMEOUT_SECONDS?=180 ; \
-	chmod +x examples/openshift/tests/test-scheduledspark-smoke.sh ; \
-	NAMESPACE=$${NAMESPACE} SCHED_NAME=$${SCHED_NAME} TIMEOUT_SECONDS=$${TIMEOUT_SECONDS} \
-		examples/openshift/tests/test-scheduledspark-smoke.sh
-
-.PHONY: openshift-scheduled-verify
-openshift-scheduled-verify: ## RBAC + ScheduledSparkApplication combined verification
-	$(MAKE) openshift-rbac-check
-	$(MAKE) openshift-scheduled-smoke
-
 # go-install-tool will 'go install' any package with custom target and name of binary, if it doesn't exist
 # $1 - target path with name of binary (ideally with version)
 # $2 - package url which can be installed
