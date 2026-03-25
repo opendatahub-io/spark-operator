@@ -31,17 +31,20 @@ cleanup() {
 trap cleanup EXIT
 
 echo "Apply ScheduledSparkApplication ${SCHED_NAME}"
+# Ensure we always test a fresh object, not stale status from a prior run.
+oc delete scheduledsparkapplication "${SCHED_NAME}" -n "${NAMESPACE}" --ignore-not-found || true
 apply_sched
 
 echo "Wait for child SparkApplication (<= ${TIMEOUT_SECONDS}s)"
 start=$(date +%s)
 while true; do
-  child="$(oc get sparkapplications -n "${NAMESPACE}" \
-    -l sparkoperator.k8s.io/launched-by-scheduled-sparkapplication-name="${SCHED_NAME}" \
-    -o jsonpath='{.items[-1:].metadata.name}' 2>/dev/null || true)"
+  child="$(oc get scheduledsparkapplication "${SCHED_NAME}" -n "${NAMESPACE}" \
+    -o jsonpath='{.status.lastRunName}' 2>/dev/null || true)"
   if [[ -n "$child" ]]; then
-    echo "Spawned: $child"
-    break
+    if oc get sparkapplication "$child" -n "${NAMESPACE}" >/dev/null 2>&1; then
+      echo "Spawned: $child"
+      break
+    fi
   fi
   (( $(date +%s) - start > TIMEOUT_SECONDS )) && {
     echo "Timed out after ${TIMEOUT_SECONDS}s"
