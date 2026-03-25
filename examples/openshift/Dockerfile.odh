@@ -1,23 +1,20 @@
+# Dockerfile.odh for Spark Operator based on AIPCC base image
 #
-# Copyright 2017 Google LLC
-#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-#     https://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
-#
+# Build: docker build -f examples/openshift/Dockerfile.odh -t <image> .
+# Override base: --build-arg BASE_IMAGE=<other-image>
 
-ARG SPARK_IMAGE=docker.io/library/spark:4.0.1
+################################################################################
+# Build Arguments
+################################################################################
+ARG GO_BUILDER_IMAGE=registry.access.redhat.com/ubi9/go-toolset:1.25.7
+ARG BASE_IMAGE=quay.io/aipcc/base-images/cpu:3.4.0-1773328752
 
-FROM golang:1.24.10 AS builder
+################################################################################
+# Stage 1: Build the Go operator binary
+################################################################################
+FROM ${GO_BUILDER_IMAGE} AS builder
 
+USER 0
 WORKDIR /workspace
 
 RUN --mount=type=cache,target=/go/pkg/mod/ \
@@ -28,33 +25,104 @@ RUN --mount=type=cache,target=/go/pkg/mod/ \
 COPY . .
 
 ENV GOCACHE=/root/.cache/go-build
-
 ARG TARGETARCH
 
 RUN --mount=type=cache,target=/go/pkg/mod/ \
     --mount=type=cache,target="/root/.cache/go-build" \
     CGO_ENABLED=0 GOOS=linux GOARCH=${TARGETARCH} GO111MODULE=on make build-operator
 
-FROM ${SPARK_IMAGE}
+################################################################################
+# Stage 2: Runtime image
+################################################################################
+FROM ${BASE_IMAGE}
+
+LABEL name="spark-operator" \
+      summary="Spark Operator for OpenShift" \
+      description="Kubeflow Spark Operator built on AIPCC base with Java 17 and PySpark 4.0.1" \
+      io.k8s.display-name="Spark Operator" \
+      io.k8s.description="Operator for managing Apache Spark applications on OpenShift"
 
 ARG SPARK_UID=185
-
 ARG SPARK_GID=185
+ARG PYSPARK_VERSION=4.0.1
 
-USER root
+USER 0
 
-RUN apt-get update \
-    && apt-get install -y tini \
-    && rm -rf /var/lib/apt/lists/*
+# Create the spark user/group using SPARK_UID.
+# The base image may already have a user at that UID, so adjust accordingly.
+RUN if getent group "${SPARK_UID}" > /dev/null 2>&1; then \
+        EXISTING_GROUP=$(getent group "${SPARK_UID}" | cut -d: -f1); \
+        groupmod -n spark "$EXISTING_GROUP"; \
+    else \
+        groupadd -g "${SPARK_UID}" spark; \
+    fi && \
+    if getent passwd "${SPARK_UID}" > /dev/null 2>&1; then \
+        EXISTING_USER=$(getent passwd "${SPARK_UID}" | cut -d: -f1); \
+        usermod -l spark -d /home/spark "$EXISTING_USER"; \
+    else \
+        useradd -u "${SPARK_UID}" -g spark -d /home/spark -s /bin/bash spark; \
+    fi && \
+    mkdir -p /home/spark && \
+    chown spark:spark /home/spark
 
-RUN mkdir -p /etc/k8s-webhook-server/serving-certs /home/spark && \
+# Install Java 17.
+# The AIPCC base image does not ship Java; add UBI9 repos
+# (publicly accessible, no entitlement required) so dnf can resolve OpenJDK
+# and all its dependencies (cups-libs, lksctp-tools, etc.).
+RUN printf '[ubi-9-baseos]\n\
+name=UBI 9 BaseOS\n\
+baseurl=https://cdn-ubi.redhat.com/content/public/ubi/dist/ubi9/9/$basearch/baseos/os\n\
+enabled=1\n\
+gpgcheck=0\n\
+\n\
+[ubi-9-appstream]\n\
+name=UBI 9 AppStream\n\
+baseurl=https://cdn-ubi.redhat.com/content/public/ubi/dist/ubi9/9/$basearch/appstream/os\n\
+enabled=1\n\
+gpgcheck=0\n' > /etc/yum.repos.d/ubi-9.repo && \
+    dnf install -y java-17-openjdk-devel && \
+    dnf clean all && rm -rf /var/cache/dnf/*
+
+# Install tini from EPEL.
+RUN dnf install -y https://dl.fedoraproject.org/pub/epel/epel-release-latest-9.noarch.rpm && \
+    dnf install -y tini && \
+    dnf clean all && rm -rf /var/cache/dnf/* && \
+    tini --version
+
+ENV JAVA_HOME="/usr/lib/jvm/java-17" \
+    JAVA_VENDOR="openjdk" \
+    JAVA_VERSION="17"
+ENV PATH="${JAVA_HOME}/bin:${PATH}"
+
+# Install PySpark (AIPCC base image pip config points to Red Hat registry)
+RUN pip3 install --no-cache-dir pyspark==${PYSPARK_VERSION}
+
+# Copy Spark distribution to /opt/spark
+ENV SPARK_HOME=/opt/spark
+RUN PYSPARK_DIR=$(python3 -c "import pyspark; import os; print(os.path.dirname(pyspark.__file__))") && \
+    cp -r "${PYSPARK_DIR}" /opt/spark && \
+    mkdir -p /opt/spark/work-dir /opt/spark/logs && \
+    echo "Spark ${PYSPARK_VERSION} (PySpark)" > /opt/spark/RELEASE && \
+    chown -R spark:spark /opt/spark/work-dir /opt/spark/logs /opt/spark/RELEASE
+
+ENV PATH="${PATH}:${SPARK_HOME}/bin:${SPARK_HOME}/sbin"
+
+# Webhook certs directory (needed by the operator's webhook server)
+RUN mkdir -p /etc/k8s-webhook-server/serving-certs && \
     chmod -R g+rw /etc/k8s-webhook-server/serving-certs && \
     chown -R spark /etc/k8s-webhook-server/serving-certs /home/spark
 
-USER ${SPARK_UID}:${SPARK_GID}
+# OpenShift arbitrary UID compatibility (GID 0 must have write access).
+RUN chgrp -R 0 /opt/spark/work-dir /opt/spark/logs /etc/k8s-webhook-server && \
+    chmod -R g=u /opt/spark/work-dir /opt/spark/logs /etc/k8s-webhook-server && \
+    chmod -R 775 /opt/spark/work-dir /opt/spark/logs
 
+# Copy the operator binary from builder stage
 COPY --from=builder /workspace/bin/spark-operator /usr/bin/spark-operator
 
+# Copy operator entrypoint
 COPY entrypoint.sh /usr/bin/
+
+USER ${SPARK_UID}:${SPARK_GID}
 
 ENTRYPOINT ["/usr/bin/entrypoint.sh"]
