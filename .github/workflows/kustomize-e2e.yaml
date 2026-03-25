@@ -1,0 +1,104 @@
+# ============================================================================
+# Kustomize E2E Tests
+# ============================================================================
+#
+# Runs the upstream Go/Ginkgo e2e test suite with the operator installed via
+# Kustomize manifests (config/default/) instead of Helm.
+#
+# ============================================================================
+
+name: Kustomize E2E Test
+
+on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - 'config/**'
+      - 'examples/openshift/tests/e2e/**'
+      - 'examples/openshift/Makefile'
+      - '.github/workflows/kustomize-e2e.yaml'
+      - 'cmd/**'
+      - 'internal/**'
+      - 'api/**'
+      - 'go.mod'
+      - 'go.sum'
+      - 'Dockerfile'
+  push:
+    branches:
+      - main
+    paths:
+      - 'config/**'
+      - 'examples/openshift/tests/e2e/**'
+      - 'examples/openshift/Makefile'
+      - '.github/workflows/kustomize-e2e.yaml'
+      - 'cmd/**'
+      - 'internal/**'
+      - 'api/**'
+      - 'go.mod'
+      - 'go.sum'
+      - 'Dockerfile'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}-${{ github.actor }}
+  cancel-in-progress: true
+
+jobs:
+  kustomize-e2e-test:
+    name: Kustomize E2E (K8s ${{ matrix.k8s_version }})
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        k8s_version:
+          - v1.24.17
+          - v1.25.16
+          - v1.26.15
+          - v1.27.16
+          - v1.28.15
+          - v1.29.12
+          - v1.30.8
+          - v1.31.4
+          - v1.32.0
+    steps:
+      - name: Checkout source code
+        uses: actions/checkout@v5.0.0
+        with:
+          fetch-depth: 0
+
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+
+      - name: Create a Kind cluster
+        run: make kind-create-cluster KIND_K8S_VERSION=${{ matrix.k8s_version }}
+
+      - name: Build and load image to Kind cluster
+        run: make kind-load-image IMAGE_TAG=local
+
+      - name: Run kustomize e2e tests
+        run: make -C examples/openshift e2e-kustomize-test
+        env:
+          SPARK_OPERATOR_IMAGE: ghcr.io/kubeflow/spark-operator/controller:local
+
+      - name: Debug - Show cluster state
+        if: failure()
+        run: |
+          echo "=== Pods in all namespaces ==="
+          kubectl get pods -A
+
+          echo ""
+          echo "=== SparkApplications ==="
+          kubectl get sparkapplications -A -o yaml 2>/dev/null || echo "No SparkApplications found"
+
+          echo ""
+          echo "=== Events ==="
+          kubectl get events -A --sort-by='.lastTimestamp' | tail -50
+
+          echo ""
+          echo "=== Operator logs ==="
+          kubectl logs -n spark-operator -l app.kubernetes.io/name=spark-operator --tail=100 2>/dev/null || echo "No operator logs"

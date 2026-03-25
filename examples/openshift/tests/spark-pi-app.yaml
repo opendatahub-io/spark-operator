@@ -24,10 +24,10 @@ spec:
   image: ${SPARK_IMAGE}
   imagePullPolicy: IfNotPresent
   mainClass: org.apache.spark.examples.SparkPi
-  mainApplicationFile: local:///opt/spark/examples/jars/spark-examples_2.12-3.5.7.jar
+  mainApplicationFile: local:///opt/spark/examples/jars/spark-examples.jar
   arguments:
     - "1000"
-  sparkVersion: "3.5.7"
+  sparkVersion: "4.0.1"
   restartPolicy:
     type: Never
   driver:
@@ -35,7 +35,7 @@ spec:
     coreLimit: "1200m"
     memory: "512m"
     labels:
-      version: 3.5.7
+      version: 4.0.1
     serviceAccount: spark-operator-spark
     securityContext: {}
   executor:
@@ -43,6 +43,6 @@ spec:
     instances: 1
     memory: "512m"
     labels:
-      version: 3.5.7
+      version: 4.0.1
     securityContext: {}
 
