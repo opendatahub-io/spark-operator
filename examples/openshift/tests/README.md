@@ -10,11 +10,12 @@ The Makefile at `examples/openshift/Makefile` provides standardized make targets
 
 ### What's Tested
 
-| Test | What It Validates |
-|------|-------------------|
-| **Operator Install** | Kustomize manifests work, fsGroup ≠ 185, non-root UID |
-| **Spark Pi** | SparkApplication CRD works, Driver/Executor pods run, job completes |
-| **Docling Spark** | PDF-to-markdown conversion, PVC storage, multi-executor workload |
+| Test | Type | What It Validates |
+|------|------|-------------------|
+| **Operator Install** | Shell | Kustomize manifests work, fsGroup ≠ 185, non-root UID |
+| **Spark Pi** | Shell | SparkApplication CRD works, Driver/Executor pods run, job completes |
+| **Docling Spark** | Shell | PDF-to-markdown conversion, PVC storage, multi-executor workload |
+| **Go E2E (Kustomize)** | Go/Ginkgo | Full upstream e2e test suite using Kustomize manifests for operator installation |
 
 ---
 
@@ -22,6 +23,7 @@ The Makefile at `examples/openshift/Makefile` provides standardized make targets
 
 - **Docker** - Running and accessible
 - **kubectl** - Kubernetes CLI
+- **Go** (1.24+) - Required for Go e2e tests
 - **kind** - For local KIND cluster setup (install via `go install sigs.k8s.io/kind` or from [kind releases](https://kind.sigs.k8s.io/docs/user/quick-start/#installation))
 
 ---
@@ -98,7 +100,8 @@ make kind-cleanup
 | `make operator-install` | Install Spark operator (auto-runs `kind-setup` if no cluster) |
 | `make test-spark-pi` | Run Spark Pi test (auto-runs `operator-install` if needed) |
 | `make test-docling-spark` | Run Docling Spark test (auto-runs `operator-install` if needed) |
-| `make test-all` | Run all tests (operator-install + spark-pi + docling) |
+| `make e2e-kustomize-test` | Run Go e2e tests with Kustomize-based operator installation |
+| `make test-all` | Run all shell tests (operator-install + spark-pi + docling) |
 
 ---
 
@@ -141,7 +144,68 @@ make test-docling-spark
 
 ---
 
-## Test Details
+## Go E2E Tests (Kustomize)
+
+The `e2e/` subdirectory contains a copy of the upstream Go e2e test suite (`test/e2e/`) adapted to install the operator using Kustomize manifests (`config/default/`) instead of Helm. This allows testing the Kustomize-based deployment path with the same SparkApplication and SparkConnect test cases the upstream project uses.
+
+### How it works
+
+The test suite in `e2e/suite_test.go` supports a toggle via the `INSTALL_METHOD` environment variable:
+
+- `INSTALL_METHOD=helm` (default) — installs the operator using the Helm chart (same as `test/e2e/`)
+- `INSTALL_METHOD=kustomize` — installs the operator using `kubectl apply -k config/default/ --server-side=true`
+
+When using Kustomize mode, the test also:
+- Overrides the operator image in `config/default/params.env` if `SPARK_OPERATOR_IMAGE` is set
+- Creates the Spark driver ServiceAccount and RBAC in the `default` namespace (matching what the Helm chart provides for test workloads)
+
+### Running locally
+
+**Prerequisites:** A Kind cluster with the operator image built from source and loaded. From the repo root:
+
+```bash
+# Build operator from source, create Kind cluster, and load image
+make kind-load-image IMAGE_TAG=local
+
+# Run the tests (SPARK_OPERATOR_IMAGE overrides the default in params.env)
+SPARK_OPERATOR_IMAGE=ghcr.io/kubeflow/spark-operator/controller:local \
+  make -C examples/openshift e2e-kustomize-test
+```
+
+Or step by step for debugging:
+
+```bash
+# 1. Build and load image into Kind
+make kind-load-image IMAGE_TAG=local
+
+# 2. Run from repo root with environment variables
+INSTALL_METHOD=kustomize \
+  SPARK_OPERATOR_IMAGE=ghcr.io/kubeflow/spark-operator/controller:local \
+  go test ./examples/openshift/tests/e2e/ -v -ginkgo.v -timeout 30m
+```
+
+### Environment variables
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `INSTALL_METHOD` | `helm` | Set to `kustomize` to use Kustomize manifests for operator installation |
+| `SPARK_OPERATOR_IMAGE` | *(uses `params.env` default)* | Overrides the controller and webhook image in `config/default/params.env` before applying. Set to the locally built image for development/CI. |
+
+### CI integration
+
+The `kustomize-e2e-test` job in `.github/workflows/kustomize-e2e.yaml` builds the operator image from the PR, loads it into Kind, and runs these tests with `SPARK_OPERATOR_IMAGE` set to the locally built image. It triggers on PRs that touch `config/`, `examples/openshift/tests/e2e/`, operator source code, or the workflow file itself, and runs across the same Kubernetes version matrix as the upstream Helm-based e2e tests.
+
+### File structure
+
+| File | Purpose |
+|------|---------|
+| `e2e/suite_test.go` | Test suite setup with Helm/Kustomize toggle, webhook readiness checks |
+| `e2e/sparkapplication_test.go` | SparkApplication e2e specs (spark-pi, configmap, custom-resource, failures, suspend/resume) |
+| `e2e/sparkconnect_test.go` | SparkConnect reconciliation spec |
+| `e2e/bad_examples/` | YAML fixtures for failure/retry test cases |
+---
+
+## Shell Test Details
 
 ### test-operator-install.sh
 
@@ -172,7 +236,9 @@ Validates:
 
 ## GitHub Actions Integration
 
-These make targets are designed to work in GitHub Actions CI. Example workflow usage:
+These make targets are designed to work in GitHub Actions CI.
+
+### Shell tests example
 
 ```yaml
 - name: Setup Kind cluster
@@ -190,6 +256,23 @@ These make targets are designed to work in GitHub Actions CI. Example workflow u
 - name: Cleanup
   if: always()
   run: make -C examples/openshift kind-cleanup
+```
+
+### Go e2e tests (Kustomize)
+
+See `.github/workflows/kustomize-e2e.yaml` for the full workflow. Key steps:
+
+```yaml
+- name: Create a Kind cluster
+  run: make kind-create-cluster KIND_K8S_VERSION=v1.32.0
+
+- name: Build and load image to Kind cluster
+  run: make kind-load-image IMAGE_TAG=local
+
+- name: Run kustomize e2e tests
+  run: make -C examples/openshift e2e-kustomize-test
+  env:
+    SPARK_OPERATOR_IMAGE: ghcr.io/kubeflow/spark-operator/controller:local
 ```
 
 > **Note:** `make -C examples/openshift` runs make from the repo root but changes to the `examples/openshift/` directory first. Alternatively, `cd examples/openshift && make` works the same way.
@@ -228,3 +311,4 @@ These make targets are designed to work in GitHub Actions CI. Example workflow u
 | `test-docling-spark.sh` | Tests Docling Spark workload |
 | `spark-pi-app.yaml` | SparkApplication manifest for Spark Pi |
 | `assets/` | Test PDF files for docling tests |
+| `e2e/` | Go e2e test suite (Ginkgo) with Helm/Kustomize toggle |

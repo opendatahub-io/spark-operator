@@ -371,7 +371,8 @@ The `examples/openshift/Makefile` provides standardized targets that are the sam
 | `make operator-install` | Install the Spark operator (auto-creates a Kind cluster if none detected) |
 | `make test-spark-pi` | Run a lightweight Spark Pi test (auto-installs operator if needed) |
 | `make test-docling-spark` | Run the Docling Spark document conversion test |
-| `make test-all` | Run all tests in sequence (operator-install, spark-pi, docling) |
+| `make e2e-kustomize-test` | Run Go e2e tests with Kustomize-based operator installation |
+| `make test-all` | Run all shell tests in sequence (operator-install, spark-pi, docling) |
 
 ### Local Kind Testing (Quick Start)
 
@@ -408,9 +409,24 @@ CLEANUP=false make test-spark-pi
 | `CLEANUP` | `true` | Set to `false` to preserve resources after tests |
 | `KIND_CLUSTER_NAME` | `spark-operator` | Name of the Kind cluster |
 | `K8S_VERSION` | `v1.32.0` | Kubernetes version for Kind |
-| `TIMEOUT_SECONDS` | `600` | Max wait time for test completion |
+| `TIMEOUT_SECONDS` | `600` | Max wait time for shell test completion |
+| `INSTALL_METHOD` | `helm` | For Go e2e tests: set to `kustomize` to use Kustomize manifests |
+| `SPARK_OPERATOR_IMAGE` | *(uses `params.env` default)* | For Go e2e tests: overrides operator image in `config/default/params.env`. Set to the locally built image for development/CI. |
 
-> **Detailed testing guide:** See [tests/README.md](./tests/README.md) for full documentation on individual test scripts, environment variables, architecture diagrams, and CI integration examples.
+### Go E2E Tests with Kustomize
+
+In addition to the shell-based tests above, the `e2e-kustomize-test` target runs the full upstream Go/Ginkgo e2e test suite using Kustomize manifests for operator installation instead of Helm. This builds the operator image from source and validates the current code.
+
+```bash
+# From the repo root: build operator, create Kind cluster, and load image
+make kind-load-image IMAGE_TAG=local
+
+# Run the Go e2e tests with the locally built image
+SPARK_OPERATOR_IMAGE=ghcr.io/kubeflow/spark-operator/controller:local \
+  make -C examples/openshift e2e-kustomize-test
+```
+
+> **Detailed testing guide:** See [tests/README.md](./tests/README.md) for full documentation on individual test scripts, Go e2e tests, environment variables, architecture diagrams, and CI integration examples.
 
 ## 8. Cleanup
 
