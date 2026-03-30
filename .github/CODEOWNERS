@@ -1,0 +1,8 @@
+# Code Owners for Spark Operator
+# This file defines individuals or teams responsible for code in this repository.
+# 
+# Documentation: https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/customizing-your-repository/about-code-owners
+
+# Default owners for everything in the repo
+# All changes will be reviewed by the Spark Operator team
+* @opendatahub-io/spark-operator
