@@ -121,9 +121,21 @@ Config: `.golangci.yaml`
 
 ## Key Files
 
-- `api/v1beta2/sparkapplication_types.go` - Core CRD type definitions
+### SparkApplication CRD
+- `api/v1beta2/sparkapplication_types.go` - SparkApplication CRD type definitions
 - `internal/controller/sparkapplication/controller.go` - Main reconciliation loop
 - `internal/controller/sparkapplication/submission.go` - Spark submission logic
+
+### ScheduledSparkApplication CRD
+- `api/v1beta2/scheduledsparkapplication_types.go` - ScheduledSparkApplication CRD type definitions
+- `internal/controller/scheduledsparkapplication/controller.go` - Cron-based scheduling controller
+
+### SparkConnect CRD (Alpha)
+- `api/v1alpha1/sparkconnect_types.go` - SparkConnect CRD type definitions (v1alpha1)
+- `internal/controller/sparkconnect/reconciler.go` - SparkConnect reconciliation logic
+- `internal/controller/sparkconnect/options.go` - SparkConnect configuration options
+
+### Other Key Files
 - `cmd/operator/main.go` - Operator entrypoint
 - `charts/spark-operator-chart/values.yaml` - Helm default values
 - `config/default/kustomization.yaml` - Default Kustomize overlay
