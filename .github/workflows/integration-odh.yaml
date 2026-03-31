@@ -1,0 +1,105 @@
+# ============================================================================
+# OpenShift Spark Pi E2E Test (Lightweight)
+# ============================================================================
+#
+# This workflow runs lightweight E2E tests using the Spark Pi example.
+# It validates the Spark Operator installation and basic SparkApplication
+# functionality without requiring the heavy docling-spark image.
+#
+# Runs on: Default GitHub runner (ubuntu-latest)
+# Duration: ~5-10 minutes
+#
+# ============================================================================
+
+name: OpenShift/KIND Spark Pi E2E
+
+on:
+  pull_request:
+    paths:
+      - 'examples/openshift/**'
+      - 'config/**'
+      - '.github/workflows/integration-odh.yaml'
+  push:
+    branches: [main]
+    paths:
+      - 'examples/openshift/**'
+      - 'config/**'
+      - '.github/workflows/integration-odh.yaml'
+  workflow_dispatch:
+    inputs:
+      debug_enabled:
+        description: 'Run with debug logging'
+        required: false
+        default: 'false'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  FULL_IMAGE: quay.io/opendatahub/spark-operator:local
+  KIND_CLUSTER_NAME: spark-operator
+  K8S_VERSION: v1.32.0
+
+jobs:
+  spark-pi-kustomize-e2e:
+    name: Spark Pi E2E Test
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Setup Kind cluster
+        uses: ./.github/actions/kind-cluster-setup
+
+      # PR: build local image and push to Quay
+      - name: Set up Docker Buildx
+        if: ${{ github.event_name == 'pull_request' }}
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build ODH operator image (PR only)
+        if: ${{ github.event_name == 'pull_request' }}
+        run: |
+          docker build \
+            -f examples/openshift/Dockerfile.odh \
+            -t "${FULL_IMAGE}" \
+            .
+
+      - name: Load image into Kind (PR only)
+        if: ${{ github.event_name == 'pull_request' }}
+        run: kind load docker-image "${FULL_IMAGE}" --name "${KIND_CLUSTER_NAME}"
+
+
+      # PR: run kustomize e2e using the preloaded image
+      - name: Run kustomize e2e tests (PR)
+        if: ${{ github.event_name == 'pull_request' }}
+        run: make -C examples/openshift e2e-kustomize-test
+        env:
+          SPARK_OPERATOR_IMAGE: ${{ env.FULL_IMAGE }}
+
+      # Push: run kustomize e2e with repo images (no overrides)
+      - name: Run kustomize e2e tests (push)
+        if: ${{ github.event_name == 'push' }}
+        run: make -C examples/openshift e2e-kustomize-test
+
+      - name: Debug - Show cluster state
+        if: failure() || inputs.debug_enabled == 'true'
+        run: |
+          echo "=== Pods in all namespaces ==="
+          kubectl get pods -A || true
+          echo ""
+          echo "=== SparkApplications ==="
+          kubectl get sparkapplications -A -o yaml 2>/dev/null || true
+          echo ""
+          echo "=== Events ==="
+          kubectl get events -A --sort-by='.lastTimestamp' | tail -50 || true
+          echo ""
+          echo "=== Operator logs ==="
+          kubectl logs -n spark-operator -l app.kubernetes.io/name=spark-operator --tail=200 2>/dev/null || true

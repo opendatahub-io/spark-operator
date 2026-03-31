@@ -25,7 +25,7 @@ spec:
   - name: output-image
     value: quay.io/opendatahub/spark-operator:{{revision}}
   - name: dockerfile
-    value: Dockerfile
+    value: examples/openshift/Dockerfile.odh
   - name: path-context
     value: .
   pipelineSpec:
@@ -50,7 +50,7 @@ spec:
         to build image.
       name: path-context
       type: string
-    - default: Dockerfile
+    - default: examples/openshift/Dockerfile.odh
       description: Path to the Dockerfile inside the context specified by parameter
         path-context
       name: dockerfile
