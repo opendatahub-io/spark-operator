@@ -1,0 +1,57 @@
+# ============================================================================
+# OpenShift Spark Pi E2E Test (Lightweight)
+# ============================================================================
+#
+# This workflow runs lightweight E2E tests using the Spark Pi example.
+# It validates the Spark Operator installation and basic SparkApplication
+# functionality without requiring the heavy docling-spark image.
+#
+# Runs on: Default GitHub runner (ubuntu-latest)
+# Duration: ~5-10 minutes
+#
+# ============================================================================
+
+name: OpenShift/KIND ODH Spark Pi E2E (Kustomize)
+
+on:
+  pull_request:
+    paths:
+      - 'examples/openshift/**'
+      - 'config/**'
+      - '.github/workflows/integration-odh.yaml'
+  push:
+    branches: [main]
+    paths:
+      - 'examples/openshift/**'
+      - 'config/**'
+      - '.github/workflows/integration-odh.yaml'
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: 'Image source'
+        required: true
+        default: 'repo'
+        type: choice
+        options: [repo, local]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  run:
+    strategy:
+      matrix:
+        arch: [amd64, arm64] 
+    uses: ./.github/workflows/_run-kustomize-e2e.yaml
+    with:
+      mode: ${{ github.event_name == 'pull_request' && 'local' || (github.event_name == 'workflow_dispatch' && inputs.mode || 'repo') }}
+      dockerfile: examples/openshift/Dockerfile.odh
+      full_image: quay.io/opendatahub/spark-operator:local
+      kind_cluster_name: spark-operator
+      k8s_version: v1.32.0
+      arch: ${{ matrix.arch }}
+      runner: ${{ matrix.arch == 'arm64' && 'ubuntu-24.04-arm' || 'ubuntu-latest' }}

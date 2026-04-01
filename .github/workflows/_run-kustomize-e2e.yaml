@@ -1,0 +1,99 @@
+name: Reusable - Run Kustomize E2E
+
+on:
+  workflow_call:
+    inputs:
+      arch:
+        description: 'Target architecture (amd64 or arm64)'
+        required: false
+        default: amd64
+        type: string
+      runner:
+        description: 'Runner label to use (e.g., ubuntu-latest or ubuntu-24.04-arm64)'
+        required: false
+        default: ubuntu-latest
+        type: string
+      mode:
+        description: 'Image source: local (build & kind-load) or repo (use params.env)'
+        required: true
+        type: string
+      dockerfile:
+        description: 'Dockerfile path for local builds'
+        required: false
+        default: examples/openshift/Dockerfile.odh
+        type: string
+      full_image:
+        description: 'Full image tag for local builds'
+        required: false
+        default: quay.io/opendatahub/spark-operator:local
+        type: string
+      kind_cluster_name:
+        description: 'Kind cluster name'
+        required: false
+        default: spark-operator
+        type: string
+      k8s_version:
+        description: 'Kubernetes version for Kind'
+        required: false
+        default: v1.32.0
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  run-kustomize-spark-pi-e2e:
+    runs-on: ${{ inputs.runner }}
+    timeout-minutes: 25
+    env:
+      MODE: ${{ inputs.mode }}
+      FULL_IMAGE: ${{ inputs.full_image }}
+      KIND_CLUSTER_NAME: ${{ inputs.kind_cluster_name }}
+      K8S_VERSION: ${{ inputs.k8s_version }}
+      ARCH: ${{ inputs.arch }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+          
+      - name: Create Kind cluster
+        shell: bash
+        run: |
+          make kind-create-cluster KIND_K8S_VERSION="${K8S_VERSION}" KIND_CLUSTER_NAME="${KIND_CLUSTER_NAME}"
+
+      - name: Build image with Make (MODE=local)
+        if: ${{ env.MODE == 'local' }}
+        shell: bash
+        run: |
+          PLATFORM="linux/${ARCH}" make -C examples/openshift docker-build-file DOCKERFILE="${{ inputs.dockerfile }}" IMAGE="${FULL_IMAGE}"
+
+      - name: Kind load image with Make (MODE=local)
+        if: ${{ env.MODE == 'local' }}
+        shell: bash
+        run: |
+          make -C examples/openshift kind-load-image-file IMAGE="${FULL_IMAGE}"
+
+      - name: Export local image env (MODE=local)
+        if: ${{ env.MODE == 'local' }}
+        shell: bash
+        run: |
+          echo "SPARK_OPERATOR_IMAGE=${FULL_IMAGE}" >> "$GITHUB_ENV"
+
+      - name: Run kustomize e2e tests
+        run: make -C examples/openshift e2e-kustomize-test
+
+      - name: Debug - Show cluster state
+        if: failure()
+        run: |
+          echo "=== Pods in all namespaces ==="
+          kubectl get pods -A || true
+          echo ""
+          echo "=== SparkApplications ==="
+          kubectl get sparkapplications -A -o yaml 2>/dev/null || true
+          echo ""
+          echo "=== Events ==="
+          kubectl get events -A --sort-by='.lastTimestamp' | tail -50 || true
+          echo ""
+          echo "=== Operator logs ==="
+          kubectl logs -n spark-operator -l app.kubernetes.io/name=spark-operator --tail=200 2>/dev/null || true
