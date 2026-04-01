@@ -25,7 +25,7 @@ spec:
   - name: output-image
     value: quay.io/opendatahub/spark-operator:test
   - name: dockerfile
-    value: examples/openshift/Dockerfile.odh
+    value: Dockerfile
   pipelineSpec:
     description: |
       This pipeline is ideal for building container images from a Containerfile while maintaining trust after pipeline customization.

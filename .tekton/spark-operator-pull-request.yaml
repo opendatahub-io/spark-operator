@@ -26,7 +26,7 @@ spec:
   - name: output-image
     value: quay.io/opendatahub/spark-operator:odh-pr
   - name: dockerfile
-    value: examples/openshift/Dockerfile.odh
+    value: Dockerfile
   - name: additional-tags
     value:
     - 'odh-pr-{{revision}}'

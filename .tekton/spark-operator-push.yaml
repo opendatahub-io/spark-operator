@@ -25,7 +25,7 @@ spec:
   - name: output-image
     value: quay.io/opendatahub/spark-operator:odh-stable
   - name: dockerfile
-    value: examples/openshift/Dockerfile.odh
+    value: Dockerfile
   pipelineRef:
     resolver: git
     params:
