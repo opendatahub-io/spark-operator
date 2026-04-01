@@ -1,0 +1,24 @@
+coverage:
+  status:
+    project:
+      default:
+        target: auto
+        threshold: 1%
+    patch:
+      default:
+        target: auto
+        threshold: 1%
+
+flags:
+  unit:
+    paths:
+      - "!test/e2e/"
+  # e2e: reserved for future use when e2e coverage reporting is enabled
+  # e2e:
+  #   paths:
+  #     - test/e2e/
+
+comment:
+  layout: "reach,diff,flags,files"
+  behavior: default
+
