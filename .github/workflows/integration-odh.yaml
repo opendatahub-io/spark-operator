@@ -11,7 +11,7 @@
 #
 # ============================================================================
 
-name: OpenShift/KIND Spark Pi E2E (Kustomize)
+name: OpenShift/KIND ODH Spark Pi E2E (Kustomize)
 
 on:
   pull_request:
@@ -45,7 +45,7 @@ jobs:
   run:
     strategy:
       matrix:
-        arch: [amd64, arm64]
+        arch: [amd64, arm64] 
     uses: ./.github/workflows/_run-kustomize-e2e.yaml
     with:
       mode: ${{ github.event_name == 'pull_request' && 'local' || (github.event_name == 'workflow_dispatch' && inputs.mode || 'repo') }}
@@ -54,4 +54,4 @@ jobs:
       kind_cluster_name: spark-operator
       k8s_version: v1.32.0
       arch: ${{ matrix.arch }}
-      runner: ${{ matrix.arch == 'arm64' && 'ubuntu-24.04-arm64' || 'ubuntu-latest' }}
+      runner: ${{ matrix.arch == 'arm64' && 'ubuntu-24.04-arm' || 'ubuntu-latest' }}
