@@ -28,7 +28,7 @@ spec:
   - name: image-expires-after
     value: 5d
   - name: dockerfile
-    value: Dockerfile
+    value: examples/openshift/Dockerfile.odh
   - name: path-context
     value: .
   pipelineSpec:
