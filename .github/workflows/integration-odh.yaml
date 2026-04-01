@@ -41,11 +41,6 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
-env:
-  FULL_IMAGE: quay.io/opendatahub/spark-operator:local
-  KIND_CLUSTER_NAME: spark-operator
-  K8S_VERSION: v1.32.0
-
 jobs:
   run:
     strategy:
@@ -55,8 +50,8 @@ jobs:
     with:
       mode: ${{ github.event_name == 'pull_request' && 'local' || (github.event_name == 'workflow_dispatch' && inputs.mode || 'repo') }}
       dockerfile: examples/openshift/Dockerfile.odh
-      full_image: ${{ env.FULL_IMAGE }}
-      kind_cluster_name: ${{ env.KIND_CLUSTER_NAME }}
-      k8s_version: ${{ env.K8S_VERSION }}
+      full_image: quay.io/opendatahub/spark-operator:local
+      kind_cluster_name: spark-operator
+      k8s_version: v1.32.0
       arch: ${{ matrix.arch }}
       runner: ${{ matrix.arch == 'arm64' && 'ubuntu-24.04-arm64' || 'ubuntu-latest' }}
