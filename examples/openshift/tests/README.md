@@ -82,6 +82,29 @@ make test-docling-spark
 make test-all
 ```
 
+### Optional: Build and use a local operator image (Kind only)
+
+Build the operator image from a specific Dockerfile, load it into Kind, then run tests. Choose the architecture as needed.
+
+```bash
+# 1) Build (pick one)
+# amd64:
+PLATFORM=linux/amd64 make -C .. docker-build-file DOCKERFILE=examples/openshift/Dockerfile.odh IMAGE=quay.io/opendatahub/spark-operator:local
+# arm64:
+PLATFORM=linux/arm64 make -C .. docker-build-file DOCKERFILE=examples/openshift/Dockerfile.odh IMAGE=quay.io/opendatahub/spark-operator:local
+
+# 2) Load into Kind
+make kind-load-image-file IMAGE=quay.io/opendatahub/spark-operator:local
+
+# 3) Run Kustomize Go e2e (uses SPARK_OPERATOR_IMAGE if set)
+SPARK_OPERATOR_IMAGE=quay.io/opendatahub/spark-operator:local make e2e-kustomize-test
+```
+
+Notes:
+- Tag must exactly match manifests (e.g., `quay.io/opendatahub/spark-operator:local`); `IfNotPresent` will use the preloaded node image.
+- Cross-builds work on x86 via Buildx, but arm64 Kind/e2e requires an ARM64 host/runner.
+- For parallel jobs, use unique tags (e.g., `:pr-<sha>`).
+
 ### Step 4: Cleanup (KIND only)
 
 ```bash

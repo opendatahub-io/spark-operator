@@ -50,7 +50,7 @@ spec:
         to build image.
       name: path-context
       type: string
-    - default: examples/openshift/Dockerfile.odh
+    - default: Dockerfile
       description: Path to the Dockerfile inside the context specified by parameter
         path-context
       name: dockerfile

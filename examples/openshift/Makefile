@@ -7,6 +7,7 @@ SHELL = /usr/bin/env bash -o pipefail
 MAKEFILE_DIR := $(dir $(abspath $(lastword $(MAKEFILE_LIST))))
 REPO_ROOT := $(abspath $(MAKEFILE_DIR)/../..)
 TESTS_DIR := $(MAKEFILE_DIR)/tests
+CONTEXT ?= $(REPO_ROOT)
 
 # Include repo root bin/ in PATH so tools installed by the root Makefile
 # (e.g. kind via 'make kind') are available to the shell scripts.
@@ -89,3 +90,23 @@ test-all: ## Run all tests (operator-install, spark-pi, docling).
 	$(MAKE) operator-install CLEANUP=false
 	$(MAKE) test-spark-pi CLEANUP=false
 	$(MAKE) test-docling-spark
+
+##@ Image Build/Load (CI and local)
+
+.PHONY: docker-build-file
+docker-build-file: ## Build docker image with a specific Dockerfile. Usage: make -C examples/openshift docker-build-file DOCKERFILE=path IMAGE=<full_image>
+	@if [ -z "$(DOCKERFILE)" ]; then echo "ERROR: DOCKERFILE is required (e.g., DOCKERFILE=examples/openshift/Dockerfile.odh)"; exit 1; fi
+	@if [ -z "$(IMAGE)" ]; then echo "ERROR: IMAGE is required (e.g., IMAGE=quay.io/opendatahub/spark-operator:local)"; exit 1; fi
+	@DF="$(DOCKERFILE)"; \
+	if [[ "$$DF" != /* ]]; then DF="$(REPO_ROOT)/$$DF"; fi; \
+	if [ -n "$(PLATFORM)" ]; then \
+		echo "Building for platform $(PLATFORM)"; \
+		docker build --platform $(PLATFORM) -f "$$DF" -t ${IMAGE} $(CONTEXT) ; \
+	else \
+		docker build -f "$$DF" -t ${IMAGE} $(CONTEXT) ; \
+	fi
+
+.PHONY: kind-load-image-file
+kind-load-image-file: ## Load a specifically built image into Kind. Usage: make -C examples/openshift kind-load-image-file IMAGE=<full_image>
+	@if [ -z "$(IMAGE)" ]; then echo "ERROR: IMAGE is required (e.g., IMAGE=quay.io/opendatahub/spark-operator:local)"; exit 1; fi
+	kind load docker-image --name $(KIND_CLUSTER_NAME) $(IMAGE)
