@@ -47,6 +47,7 @@ jobs:
       matrix:
         arch: [amd64, arm64] 
     uses: ./.github/workflows/_run-kustomize-e2e.yaml
+    secrets: inherit
     with:
       mode: ${{ github.event_name == 'pull_request' && 'local' || (github.event_name == 'workflow_dispatch' && inputs.mode || 'repo') }}
       dockerfile: examples/openshift/Dockerfile.odh
