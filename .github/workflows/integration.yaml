@@ -116,13 +116,6 @@ jobs:
       - name: Run go unit tests
         run: make unit-test
 
-      - name: Upload unit test coverage to Codecov
-        uses: codecov/codecov-action@v5
-        with:
-          files: cover-unit.out
-          flags: unit
-          token: ${{ secrets.CODECOV_TOKEN }}
-
       - name: Build Spark operator
         run: make build-operator
 
