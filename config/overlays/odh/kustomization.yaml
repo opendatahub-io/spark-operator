@@ -13,11 +13,22 @@ namespace: opendatahub
 # 2. Import base configuration
 resources:
   - ../../default # Inherits everything from config/default/
+  - ../../prometheus
   - networkpolicy.yaml
 
 # 3. Delete the Namespace resource (ODH operator manages it)
+#    Add monitoring label to PodMonitor
 patches:
   - path: delete-namespace.yaml
+  - patch: |-
+      - op: add
+        path: /metadata/labels/opendatahub.io~1monitoring
+        value: "true"
+    target:
+      group: monitoring.coreos.com
+      version: v1
+      kind: PodMonitor
+      name: spark-operator-metrics-monitor
 
 # 4. Add ODH-specific labels
 labels:

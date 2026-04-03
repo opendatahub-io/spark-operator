@@ -9,7 +9,7 @@ metadata:
     app.kubernetes.io/component: webhook
 subjects:
   - kind: ServiceAccount
-    name: webhook
+    name: spark-operator-webhook
     namespace: system
 roleRef:
   apiGroup: rbac.authorization.k8s.io

@@ -13,15 +13,11 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 #
-# After Kustomize namePrefix (spark-operator-):
-#   - ServiceAccount: spark-operator-spark
-#   - Role: spark-operator-role
-#   - RoleBinding: spark-operator-rolebinding
 apiVersion: v1
 kind: ServiceAccount
 automountServiceAccountToken: true
 metadata:
-  name: spark
+  name: spark-operator-spark
   namespace: system
   labels:
     app.kubernetes.io/name: spark-operator
@@ -31,7 +27,7 @@ metadata:
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
 metadata:
-  name: role
+  name: spark-operator-role
   namespace: system
 rules:
 - apiGroups:
@@ -56,7 +52,7 @@ rules:
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
 metadata:
-  name: rolebinding
+  name: spark-operator-rolebinding
   namespace: system
   labels:
     app.kubernetes.io/name: spark-operator
@@ -64,9 +60,9 @@ metadata:
     app.kubernetes.io/component: spark
 subjects:
   - kind: ServiceAccount
-    name: spark
+    name: spark-operator-spark
     namespace: system
 roleRef:
   kind: Role
-  name: role
+  name: spark-operator-role
   apiGroup: rbac.authorization.k8s.io

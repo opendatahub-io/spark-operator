@@ -7,9 +7,7 @@
 apiVersion: admissionregistration.k8s.io/v1
 kind: MutatingWebhookConfiguration
 metadata:
-  # Name is "webhook" so after namePrefix it becomes "spark-operator-webhook"
-  # which matches the --mutating-webhook-name arg in the deployment
-  name: webhook
+  name: spark-operator-webhook
   labels:
     app.kubernetes.io/name: spark-operator
     app.kubernetes.io/instance: spark-operator

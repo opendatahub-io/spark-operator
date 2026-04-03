@@ -6,7 +6,7 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: webhook
+  name: spark-operator-webhook
   namespace: system
   labels:
     app.kubernetes.io/name: spark-operator
@@ -31,7 +31,7 @@ spec:
         prometheus.io/port: "8080"
         prometheus.io/path: /metrics
     spec:
-      serviceAccountName: webhook
+      serviceAccountName: spark-operator-webhook
       automountServiceAccountToken: true
       securityContext:
         runAsNonRoot: true

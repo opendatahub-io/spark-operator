@@ -25,7 +25,7 @@ spec:
   - name: output-image
     value: quay.io/opendatahub/spark-operator:{{revision}}
   - name: dockerfile
-    value: Dockerfile
+    value: examples/openshift/Dockerfile.odh
   - name: path-context
     value: .
   pipelineSpec:

@@ -9,7 +9,7 @@ metadata:
     app.kubernetes.io/component: controller
 subjects:
   - kind: ServiceAccount
-    name: controller
+    name: spark-operator-controller
     namespace: system
 roleRef:
   apiGroup: rbac.authorization.k8s.io

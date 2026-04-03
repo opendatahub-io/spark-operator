@@ -14,9 +14,6 @@ kind: Kustomization
 # Default namespace for standalone deployment
 namespace: spark-operator
 
-# Name prefix for all resources
-namePrefix: spark-operator-
-
 # Resources to include
 resources:
   - ../crd
@@ -46,7 +43,7 @@ replacements:
     targets:
       - select:
           kind: Deployment
-          name: controller
+          name: spark-operator-controller
         fieldPaths:
           - spec.template.spec.containers.[name=controller].image
   - source:
@@ -56,6 +53,6 @@ replacements:
     targets:
       - select:
           kind: Deployment
-          name: webhook
+          name: spark-operator-webhook
         fieldPaths:
           - spec.template.spec.containers.[name=webhook].image

@@ -2,7 +2,7 @@
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
 metadata:
-  name: controller  # References leader-election-role.yaml
+  name: spark-operator-controller  # References leader-election-role.yaml
   namespace: system
   labels:
     app.kubernetes.io/name: spark-operator
@@ -10,9 +10,9 @@ metadata:
     app.kubernetes.io/component: controller
 subjects:
   - kind: ServiceAccount
-    name: controller
+    name: spark-operator-controller
     namespace: system
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: Role
-  name: controller
+  name: spark-operator-controller
