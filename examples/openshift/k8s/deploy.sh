@@ -124,23 +124,9 @@ cmd_deploy() {
         log_info "PVC '$OUTPUT_PVC' already exists"
     fi
 
-    # Step 3: Install ValidatingAdmissionPolicy (Requires cluster admin)
+    # Step 3: Submit Spark Application
     echo ""
-    echo "3. Installing ValidatingAdmissionPolicy (optional)..."
-    if [ "$CLI" == "oc" ]; then
-        if oc auth can-i create validatingadmissionpolicies --all-namespaces &> /dev/null; then
-            echo "   Installing policy to prevent fsGroup in SparkApplications..."
-            $CLI apply -f "$SCRIPT_DIR/base/validating-admission-policy.yaml"
-            $CLI apply -f "$SCRIPT_DIR/base/validating-admission-policy-binding.yaml"
-            echo "   ✅ Policy installed"
-        else
-            echo "   ⚠️  Skipping (requires cluster-admin). Install manually if needed."
-        fi
-    fi
-
-    # Step 4: Submit Spark Application
-    echo ""
-    echo "4. Submitting Spark Application..."
+    echo "3. Submitting Spark Application..."
     # Update namespace and apply - use sed to replace namespace dynamically
     sed "s/namespace: spark-operator/namespace: $NAMESPACE/" "$SCRIPT_DIR/docling-spark-app.yaml" | \
         $CLI replace --force -f - || \
