@@ -113,7 +113,7 @@ test-all: ## Run all tests (operator-install, spark-pi, docling, scheduledspark)
 	$(MAKE) operator-install CLEANUP=false
 	$(MAKE) test-spark-pi CLEANUP=false
 	$(MAKE) test-docling-spark CLEANUP=false
-	$(MAKE) scheduledspark-verify
+	$(MAKE) scheduledspark-verify CLEANUP=false
 	$(MAKE) test-docling-spark
 
 ##@ Image Build/Load (CI and local)
