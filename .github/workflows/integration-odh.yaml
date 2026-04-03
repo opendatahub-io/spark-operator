@@ -14,11 +14,6 @@
 name: OpenShift/KIND ODH Spark Pi E2E (Kustomize)
 
 on:
-  pull_request:
-    paths:
-      - 'examples/openshift/**'
-      - 'config/**'
-      - '.github/workflows/integration-odh.yaml'
   push:
     branches: [main]
     paths:
@@ -47,8 +42,9 @@ jobs:
       matrix:
         arch: [amd64, arm64] 
     uses: ./.github/workflows/_run-kustomize-e2e.yaml
+    secrets: inherit
     with:
-      mode: ${{ github.event_name == 'pull_request' && 'local' || (github.event_name == 'workflow_dispatch' && inputs.mode || 'repo') }}
+      mode: ${{ github.event_name == 'workflow_dispatch' && inputs.mode || 'repo' }}
       dockerfile: examples/openshift/Dockerfile.odh
       full_image: quay.io/opendatahub/spark-operator:local
       kind_cluster_name: spark-operator

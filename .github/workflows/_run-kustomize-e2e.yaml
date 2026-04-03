@@ -62,6 +62,14 @@ jobs:
         run: |
           make kind-create-cluster KIND_K8S_VERSION="${K8S_VERSION}" KIND_CLUSTER_NAME="${KIND_CLUSTER_NAME}"
 
+      - name: Log in to Quay
+        if: ${{ env.MODE == 'local' }}
+        uses: docker/login-action@4907a6ddec9925e35a0a9e82d7399ccc52663121
+        with:
+          registry: quay.io
+          username: ${{ secrets.AIPCC_BASE_IMAGE_USERNAME }}
+          password: ${{ secrets.AIPCC_BASE_IMAGE_PASSWORD }}
+
       - name: Build image with Make (MODE=local)
         if: ${{ env.MODE == 'local' }}
         shell: bash
