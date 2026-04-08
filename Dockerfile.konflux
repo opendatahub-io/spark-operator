@@ -1,23 +1,13 @@
-#
-# Copyright 2017 Google LLC
-#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-#     https://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
-#
+# Build args for ODH flow
+ARG GO_BUILDER_IMAGE=registry.access.redhat.com/ubi9/go-toolset@sha256:2830e4bd1c394ed506c00a9abbb4d00445e2e72e8ef4e3cd51e0da0db66dee12
+ARG BASE_IMAGE=quay.io/aipcc/base-images/cpu:3.4.0-1773328752
 
-ARG SPARK_IMAGE=docker.io/library/spark:4.0.1
+################################################################################
+# Stage 1: Build the Go operator binary
+################################################################################
+FROM ${GO_BUILDER_IMAGE} AS builder
 
-FROM golang:1.24.10 AS builder
-
+USER 0
 WORKDIR /workspace
 
 RUN --mount=type=cache,target=/go/pkg/mod/ \
@@ -28,37 +18,93 @@ RUN --mount=type=cache,target=/go/pkg/mod/ \
 COPY . .
 
 ENV GOCACHE=/root/.cache/go-build
-
 ARG TARGETARCH
 
 RUN --mount=type=cache,target=/go/pkg/mod/ \
     --mount=type=cache,target="/root/.cache/go-build" \
     CGO_ENABLED=0 GOOS=linux GOARCH=${TARGETARCH} GO111MODULE=on make build-operator
 
-FROM ${SPARK_IMAGE}
+################################################################################
+# Stage 2: Runtime image (ODH-style)
+################################################################################
+FROM ${BASE_IMAGE}
 
 ARG SPARK_UID=185
-
 ARG SPARK_GID=185
+ARG PYSPARK_VERSION=4.0.1
 
-USER root
+USER 0
 
-RUN apt-get update \
-    && apt-get install -y tini \
-    && rm -rf /var/lib/apt/lists/*
+# Create spark user/group with SPARK_UID if needed
+RUN if getent group "${SPARK_UID}" > /dev/null 2>&1; then \
+        EXISTING_GROUP=$(getent group "${SPARK_UID}" | cut -d: -f1); \
+        groupmod -n spark "$EXISTING_GROUP"; \
+    else \
+        groupadd -g "${SPARK_UID}" spark; \
+    fi && \
+    if getent passwd "${SPARK_UID}" > /dev/null 2>&1; then \
+        EXISTING_USER=$(getent passwd "${SPARK_UID}" | cut -d: -f1); \
+        usermod -l spark -d /home/spark "$EXISTING_USER"; \
+    else \
+        useradd -u "${SPARK_UID}" -g spark -d /home/spark -s /bin/bash spark; \
+    fi && \
+    mkdir -p /home/spark && \
+    chown spark:spark /home/spark
 
-RUN mkdir -p /etc/k8s-webhook-server/serving-certs /home/spark && \
+# Install Java 17
+RUN printf '[ubi-9-baseos]\n\
+name=UBI 9 BaseOS\n\
+baseurl=https://cdn-ubi.redhat.com/content/public/ubi/dist/ubi9/9/$basearch/baseos/os\n\
+enabled=1\n\
+gpgcheck=0\n\
+\n\
+[ubi-9-appstream]\n\
+name=UBI 9 AppStream\n\
+baseurl=https://cdn-ubi.redhat.com/content/public/ubi/dist/ubi9/9/$basearch/appstream/os\n\
+enabled=1\n\
+gpgcheck=0\n' > /etc/yum.repos.d/ubi-9.repo && \
+    dnf install -y java-17-openjdk-devel && \
+    dnf clean all && rm -rf /var/cache/dnf/*
+
+# Install tini from EPEL
+RUN dnf install -y https://dl.fedoraproject.org/pub/epel/epel-release-latest-9.noarch.rpm && \
+    dnf install -y tini && \
+    dnf clean all && rm -rf /var/cache/dnf/* && \
+    tini --version
+
+ENV JAVA_HOME="/usr/lib/jvm/java-17" \
+    JAVA_VENDOR="openjdk" \
+    JAVA_VERSION="17"
+ENV PATH="${JAVA_HOME}/bin:${PATH}"
+
+# Install PySpark and stage Spark layout
+RUN pip3 install --no-cache-dir pyspark==${PYSPARK_VERSION}
+ENV SPARK_HOME=/opt/spark
+RUN PYSPARK_DIR=$(python3 -c "import pyspark; import os; print(os.path.dirname(pyspark.__file__))") && \
+    cp -r "${PYSPARK_DIR}" /opt/spark && \
+    mkdir -p /opt/spark/work-dir /opt/spark/logs && \
+    echo "Spark ${PYSPARK_VERSION} (PySpark)" > /opt/spark/RELEASE && \
+    chown -R spark:spark /opt/spark/work-dir /opt/spark/logs /opt/spark/RELEASE
+ENV PATH="${PATH}:${SPARK_HOME}/bin:${SPARK_HOME}/sbin"
+
+# Webhook certs directory
+RUN mkdir -p /etc/k8s-webhook-server/serving-certs && \
     chmod -R g+rw /etc/k8s-webhook-server/serving-certs && \
     chown -R spark /etc/k8s-webhook-server/serving-certs /home/spark
 
-USER ${SPARK_UID}:${SPARK_GID}
+# OpenShift arbitrary UID compatibility
+RUN chgrp -R 0 /opt/spark/work-dir /opt/spark/logs /etc/k8s-webhook-server && \
+    chmod -R g=u /opt/spark/work-dir /opt/spark/logs /etc/k8s-webhook-server && \
+    chmod -R 775 /opt/spark/work-dir /opt/spark/logs
 
+# Operator binary and entrypoint
 COPY --from=builder /workspace/bin/spark-operator /usr/bin/spark-operator
-
 COPY entrypoint.sh /usr/bin/
 
+USER ${SPARK_UID}:${SPARK_GID}
 ENTRYPOINT ["/usr/bin/entrypoint.sh"]
 
+# Preserve Konflux labels
 LABEL com.redhat.component="odh-spark-operator" \
       name="managed-open-data-hub/odh-spark-operator-rhel9" \
       description="This image contains the Spark Operator controller. It watches for SparkApplication Custom Resources (CRDs) and automates the submission, monitoring, and scaling of Spark driver and executor pods on the cluster." \
