@@ -40,7 +40,29 @@ spec:
       - linux/ppc64le
       - linux/s390x
   - name: prefetch-input
-    value: gomod
+    value: |
+      [
+        {
+          "type": "gomod",
+          "path": "."
+        },
+        {
+          "type": "pip",
+          "path": "."
+        },
+        {
+          "type": "rpm",
+          "path": ".",
+          "include_summary_in_sbom": true,
+          "options": {
+            "dnf": {
+              "epel": {
+                "gpgcheck": "0"
+              }
+            }
+          }
+        }
+      ]
   pipelineRef:
     resolver: git
     params:

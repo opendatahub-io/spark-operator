@@ -51,24 +51,15 @@ RUN if getent group "${SPARK_UID}" > /dev/null 2>&1; then \
     mkdir -p /home/spark && \
     chown spark:spark /home/spark
 
-# Install Java 17
-RUN printf '[ubi-9-baseos]\n\
-name=UBI 9 BaseOS\n\
-baseurl=https://cdn-ubi.redhat.com/content/public/ubi/dist/ubi9/9/$basearch/baseos/os\n\
-enabled=1\n\
-gpgcheck=0\n\
-\n\
-[ubi-9-appstream]\n\
-name=UBI 9 AppStream\n\
-baseurl=https://cdn-ubi.redhat.com/content/public/ubi/dist/ubi9/9/$basearch/appstream/os\n\
-enabled=1\n\
-gpgcheck=0\n' > /etc/yum.repos.d/ubi-9.repo && \
-    dnf install -y java-17-openjdk-devel && \
+# Copy UBI repo file for cachi2 prefetch (packages installed from prefetched cache)
+COPY ubi.repo /etc/yum.repos.d/ubi.repo
+
+# Install Java 17 (prefetched by cachi2)
+RUN dnf install -y java-17-openjdk-devel && \
     dnf clean all && rm -rf /var/cache/dnf/*
 
-# Install tini from EPEL
-RUN dnf install -y https://dl.fedoraproject.org/pub/epel/epel-release-latest-9.noarch.rpm && \
-    dnf install -y tini && \
+# Install tini (prefetched by cachi2 from EPEL)
+RUN dnf install -y tini && \
     dnf clean all && rm -rf /var/cache/dnf/* && \
     tini --version
 
