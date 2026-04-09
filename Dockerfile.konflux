@@ -51,9 +51,6 @@ RUN if getent group "${SPARK_UID}" > /dev/null 2>&1; then \
     mkdir -p /home/spark && \
     chown spark:spark /home/spark
 
-# Copy UBI repo file for cachi2 prefetch (packages installed from prefetched cache)
-COPY ubi.repo /etc/yum.repos.d/ubi.repo
-
 # Install Java 17 (prefetched by cachi2)
 RUN dnf install -y java-17-openjdk-devel && \
     dnf clean all && rm -rf /var/cache/dnf/*
