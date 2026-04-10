@@ -5,11 +5,12 @@ arches:
   - s390x
 
 contentOrigin:
-  - ./ubi.repo
+  repofiles:
+    - ./ubi.repo
+    - ./epel.repo
 
 packages:
   # Java 17 OpenJDK for Spark operator
   - java-17-openjdk-devel
-  # Tini - minimal init system for containers
-  # Note: tini is in EPEL, will be configured via tekton prefetch options
+  # Tini - minimal init system for containers (from EPEL)
   - tini
