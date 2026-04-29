@@ -1,0 +1,2 @@
+--index-url=https://console.redhat.com/api/pypi/public-rhai/rhoai/3.4/cpu-ubi9/simple/
+pyspark==4.0.1
