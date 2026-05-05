@@ -1,0 +1,97 @@
+apiVersion: tekton.dev/v1
+kind: PipelineRun
+metadata:
+  annotations:
+    build.appstudio.openshift.io/repo: https://github.com/opendatahub-io/spark-operator?rev={{revision}}
+    build.appstudio.redhat.com/commit_sha: '{{revision}}'
+    build.appstudio.redhat.com/target_branch: '{{target_branch}}'
+    pipelinesascode.tekton.dev/cancel-in-progress: "true"
+    pipelinesascode.tekton.dev/max-keep-runs: "3"
+    pipelinesascode.tekton.dev/on-cel-expression: |
+      event == "issue_comment" &&
+      (body.comment.body == "/test-early-gate" || body.comment.body.startsWith("/test-early-gate ")) &&
+      (body.action == "created" || body.action == "edited") &&
+      body.issue.pull_request != null &&
+      body.issue.state == "open"
+  labels:
+    appstudio.openshift.io/application: opendatahub-builds
+    appstudio.openshift.io/component: spark-operator-e2e-early-gate
+    pipelines.appstudio.openshift.io/type: build
+  name: spark-operator-e2e-early-gate-on-comment
+  namespace: open-data-hub-tenant
+spec:
+  params:
+  # Group components - include the spark-operator image built by PR pipeline
+  - name: group-components
+    value: |
+      {
+        "spark-operator-ci": {
+          "image": "quay.io/opendatahub/spark-operator:on-pr-{{revision}}",
+          "git.url": "https://github.com/opendatahub-io/spark-operator",
+          "git.commit": "{{revision}}"
+        }
+      }
+
+  # Operator configuration (will be built with spark-operator embedded)
+  - name: operator-git-url
+    value: 'https://github.com/opendatahub-io/opendatahub-operator'
+  - name: operator-revision
+    value: 'main'
+  - name: operator-output-image
+    value: quay.io/opendatahub/opendatahub-operator:e2e-spark-pr-{{revision}}
+  - name: operator-dockerfile
+    value: Dockerfiles/rhoai.Dockerfile
+  - name: operator-build-args
+    value:
+    - BUILD_TYPE=CI
+
+  # Bundle and catalog configuration
+  - name: bundle-output-image
+    value: quay.io/opendatahub/opendatahub-operator-bundle:e2e-spark-pr-{{revision}}
+  - name: catalog-output-image
+    value: quay.io/opendatahub/opendatahub-operator-catalog:e2e-spark-pr-{{revision}}
+
+  # Build configuration
+  - name: build-version-tag
+    value: "odh-stable"
+  - name: pipeline-type
+    value: "pull-request"
+  - name: image-expires-after
+    value: "7d"
+
+  # Repository configuration
+  - name: build-config-git-url
+    value: "https://github.com/opendatahub-io/ODH-Build-Config"
+  - name: build-config-revision
+    value: "main"
+  - name: openshift-version
+    value: "v4.20"
+  - name: quay-tag
+    value: "odh-stable"
+
+  # Utils configuration
+  - name: utils-repo-url
+    value: "https://github.com/red-hat-data-services/RHOAI-Konflux-Automation.git"
+  - name: utils-repo-ref
+    value: "odh"
+
+  pipelineRef:
+    resolver: git
+    params:
+    - name: url
+      value: https://github.com/opendatahub-io/odh-konflux-central.git
+    - name: revision
+      value: 'earlygate'
+    - name: pathInRepo
+      value: e2e-early-gate/early-gate-e2e-pipeline.yaml
+
+  taskRunTemplate:
+    serviceAccountName: build-pipeline-spark-operator-ci
+
+  workspaces:
+  - name: git-auth
+    secret:
+      secretName: '{{ git_auth_secret }}'
+  - name: netrc
+    secret:
+      secretName: '{{ git_auth_secret }}'
