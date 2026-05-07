@@ -7,59 +7,49 @@ metadata:
     build.appstudio.redhat.com/target_branch: '{{target_branch}}'
     pipelinesascode.tekton.dev/cancel-in-progress: "true"
     pipelinesascode.tekton.dev/max-keep-runs: "3"
-    pipelinesascode.tekton.dev/on-cel-expression: |
-      event == "issue_comment" &&
-      (body.comment.body == "/test-early-gate" || body.comment.body.startsWith("/test-early-gate ")) &&
-      (body.action == "created" || body.action == "edited") &&
-      body.issue.pull_request != null &&
-      body.issue.state == "open"
+    pipelinesascode.tekton.dev/on-event: "[issue_comment]"
+    pipelinesascode.tekton.dev/on-comment: "^/test-early-gate"
   labels:
     appstudio.openshift.io/application: opendatahub-builds
-    appstudio.openshift.io/component: spark-operator-e2e-early-gate
+    appstudio.openshift.io/component: early-gate-test
     pipelines.appstudio.openshift.io/type: build
-  name: spark-operator-e2e-early-gate-on-comment
+  name: early-gate-test-on-comment
   namespace: open-data-hub-tenant
 spec:
   params:
   # Group components - include the spark-operator image built by PR pipeline
   - name: group-components
-    value: |
-      {
-        "spark-operator-ci": {
-          "image": "quay.io/opendatahub/spark-operator:on-pr-{{revision}}",
-          "git.url": "https://github.com/opendatahub-io/spark-operator",
-          "git.commit": "{{revision}}"
-        }
-      }
+    value: '{ "spark-operator-ci": "opendatahub/quay.io/opendatahub/spark-operator" }'
 
-  # Operator configuration (will be built with spark-operator embedded)
   - name: operator-git-url
     value: 'https://github.com/opendatahub-io/opendatahub-operator'
   - name: operator-revision
     value: 'main'
+
+  # Output images - use unique tags to avoid conflicts
   - name: operator-output-image
-    value: quay.io/opendatahub/opendatahub-operator:e2e-spark-pr-{{revision}}
+    value: quay.io/opendatahub/opendatahub-operator:e2e-dsp-pr-{{revision}}
+  - name: bundle-output-image
+    value: quay.io/opendatahub/opendatahub-operator-bundle:e2e-dsp-pr-{{revision}}
+  - name: catalog-output-image
+    value: quay.io/opendatahub/opendatahub-operator-catalog:e2e-dsp-pr-{{revision}}
+
+  # Operator build configuration
   - name: operator-dockerfile
     value: Dockerfiles/rhoai.Dockerfile
+  - name: build-version-tag
+    value: "odh-stable"
   - name: operator-build-args
     value:
     - BUILD_TYPE=CI
 
-  # Bundle and catalog configuration
-  - name: bundle-output-image
-    value: quay.io/opendatahub/opendatahub-operator-bundle:e2e-spark-pr-{{revision}}
-  - name: catalog-output-image
-    value: quay.io/opendatahub/opendatahub-operator-catalog:e2e-spark-pr-{{revision}}
-
-  # Build configuration
-  - name: build-version-tag
-    value: "odh-stable"
+  # Pipeline configuration
   - name: pipeline-type
     value: "pull-request"
   - name: image-expires-after
     value: "7d"
 
-  # Repository configuration
+  # ODH-Build-Config repository (for bundle and catalog)
   - name: build-config-git-url
     value: "https://github.com/opendatahub-io/ODH-Build-Config"
   - name: build-config-revision
@@ -69,12 +59,13 @@ spec:
   - name: quay-tag
     value: "odh-stable"
 
-  # Utils configuration
+  # Utils repository (for processors)
   - name: utils-repo-url
     value: "https://github.com/red-hat-data-services/RHOAI-Konflux-Automation.git"
   - name: utils-repo-ref
     value: "odh"
 
+  # Reference to the central e2e pipeline in odh-konflux-central
   pipelineRef:
     resolver: git
     params:
