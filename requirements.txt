@@ -4,7 +4,7 @@
 #
 #    pip-compile --allow-unsafe --generate-hashes requirements.in
 #
---index-url https://console.redhat.com/api/pypi/public-rhai/rhoai/3.5/cpu-ubi9/simple/
+--index-url https://console.redhat.com/api/pypi/public-rhai/rhoai/3.5-EA1/cpu-ubi9/simple/
 
 py4j==0.10.9.9 \
     --hash=sha256:9d28ccc833a9a99abee95569452f7782cec39cd1d57e872577e8216aa1abbc48
