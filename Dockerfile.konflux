@@ -1,5 +1,5 @@
 # Build args for ODH flow
-ARG GO_BUILDER_IMAGE=registry.access.redhat.com/ubi9/go-toolset@sha256:570ebf7fd7809394f10deaa27bc5b80e31891c17f10e95fe6b587e4eea7be790
+ARG GO_BUILDER_IMAGE=registry.access.redhat.com/ubi9/go-toolset@sha256:699075dcb578309fecb632f2e7b680d58a27eb5666d2dc60366c892a81127b5d
 ARG BASE_IMAGE=quay.io/aipcc/base-images/cpu@sha256:36b603109f905559dd149f653f261f0083f9ec5326f7c710239dfd0307c3d946
 
 ################################################################################
