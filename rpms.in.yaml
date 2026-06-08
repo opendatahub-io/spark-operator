@@ -7,10 +7,9 @@ arches:
 contentOrigin:
   repofiles:
     - ./ubi.repo
-    - ./epel.repo
 
 packages:
   # Java 17 OpenJDK for Spark operator
   - java-17-openjdk-devel
-  # Tini - minimal init system for containers (from EPEL)
-  - tini
+  # Podman - provides catatonit as the init system for containers
+  - podman

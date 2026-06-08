@@ -56,15 +56,17 @@ RUN if getent group "${SPARK_UID}" > /dev/null 2>&1; then \
 RUN dnf install -y java-17-openjdk-devel && \
     dnf clean all && rm -rf /var/cache/dnf/*
 
-# Install tini (prefetched by cachi2 from EPEL)
-RUN dnf install -y tini && \
-    dnf clean all && rm -rf /var/cache/dnf/* && \
-    tini --version
+# Install podman (prefetched by cachi2) - provides catatonit
+RUN dnf install -y podman && \
+    dnf clean all && rm -rf /var/cache/dnf/*
 
 ENV JAVA_HOME="/usr/lib/jvm/java-17" \
     JAVA_VENDOR="openjdk" \
     JAVA_VERSION="17"
-ENV PATH="${JAVA_HOME}/bin:${PATH}"
+ENV PATH="${JAVA_HOME}/bin:${PATH}:/usr/libexec/podman"
+
+# Verify catatonit is available
+RUN catatonit --version
 
 # Install PySpark and stage Spark layout
 RUN pip3 install --no-cache-dir pyspark==${PYSPARK_VERSION}
