@@ -17,10 +17,8 @@ FROM ${GO_BUILDER_IMAGE} AS builder
 USER 0
 WORKDIR /workspace
 
-RUN --mount=type=cache,target=/go/pkg/mod/ \
-    --mount=type=bind,source=go.mod,target=go.mod \
-    --mount=type=bind,source=go.sum,target=go.sum \
-    go mod download
+COPY go.mod go.sum ./
+RUN go mod download
 
 COPY . .
 
