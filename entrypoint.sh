@@ -23,4 +23,5 @@ if ! getent passwd "$myuid" &> /dev/null; then
     done
 fi
 
-exec /usr/bin/tini -s -- /usr/bin/spark-operator "$@"
+CATATONIT=$(command -v catatonit) || { echo "error: catatonit not found in PATH" >&2; exit 1; }
+exec "$CATATONIT" -- /usr/bin/spark-operator "$@"
