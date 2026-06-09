@@ -1,0 +1,39 @@
+# Non-admin ServiceAccount for testing priority-based scheduling as a restricted user.
+#
+# This SA can create/get/delete SparkApplications and view pods, but cannot
+# modify Kueue resources, ClusterQueues, or cluster-level objects.
+#
+# Apply with: oc apply -f examples/openshift/kueue/spark-nonadmin-rbac.yaml
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: spark-nonadmin
+  namespace: spark-operator
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: spark-nonadmin-role
+  namespace: spark-operator
+rules:
+- apiGroups: ["sparkoperator.k8s.io"]
+  resources: ["sparkapplications"]
+  verbs: ["create", "get", "list", "watch", "delete"]
+- apiGroups: [""]
+  resources: ["pods", "pods/log"]
+  verbs: ["get", "list", "watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: spark-nonadmin-binding
+  namespace: spark-operator
+subjects:
+- kind: ServiceAccount
+  name: spark-nonadmin
+  namespace: spark-operator
+roleRef:
+  kind: Role
+  name: spark-nonadmin-role
+  apiGroup: rbac.authorization.k8s.io

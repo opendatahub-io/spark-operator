@@ -147,26 +147,28 @@ oc get events -n spark-operator --sort-by='.lastTimestamp' | tail -20
 1. Kueue webhook sets `spec.suspend=true` on creation
 2. SparkApplication enters `Suspended` state
 3. Kueue creates a Workload and admits it (quota available), sets `spec.suspend=false`
-4. Spark Operator transitions: `Resuming` → `New` → `Submitted` → `Running`
+4. Spark Operator transitions: `Resuming` -> `New` -> `Submitted` -> `Running`
 5. Driver and executor pods are created
 6. Job completes, Kueue reclaims quota
 
 ## Running the Automated E2E Tests
 
+### Basic Integration Tests
+
 Automated Ginkgo tests are in `examples/openshift/kueue/kueue_test.go`. They cover:
 
 | Test | Description |
 |------|-------------|
-| AC1 | Basic admission lifecycle (submit → admit → run → complete → quota reclaimed) |
+| AC1 | Basic admission lifecycle (submit -> admit -> run -> complete -> quota reclaimed) |
 | AC2 | Quota enforcement (excess jobs remain suspended while quota is exhausted) |
 | AC3 | Quota reclamation (queued job admitted after completing job frees quota) |
 | AC4 | Resume after suspension (suspended job runs to completion when quota freed) |
 
-### Prerequisites
+#### Prerequisites
 
 Complete steps 1-6 above.
 
-### Run
+#### Run
 
 ```bash
 cd /path/to/spark-operator
@@ -178,7 +180,119 @@ go test -v -tags openshift ./examples/openshift/kueue/ \
   -timeout 35m
 ```
 
-Tests take ~4 minutes to complete. Add `-ginkgo.v` to see step-by-step progress and SparkApplication state transitions.
+Tests take ~4 minutes to complete.
+
+### Priority, FairSharing & Preemption Tests
+
+Tests in `examples/openshift/kueue/kueue_priority_test.go` validate advanced Kueue scheduling:
+
+| Test | Description |
+|------|-------------|
+| FairSharing Policy | Team B admitted before Team A's additional submissions when A over fair share |
+| Priority-Based Scheduling | Higher-priority jobs admitted before lower-priority ones (as non-admin user) |
+| Preemption Lifecycle | Running low-priority app preempted: pods deleted, state -> Suspended |
+| Resume After Preemption | Preempted app restarts from scratch (new submission ID) and completes |
+
+#### Additional Prerequisites
+
+In addition to steps 1-6, apply the priority-specific resources:
+
+```bash
+# Apply WorkloadPriorityClasses, cohort ClusterQueues, and team LocalQueues
+oc apply -f examples/openshift/kueue/kueue-priority-resources.yaml
+
+# Apply non-admin ServiceAccount RBAC
+oc apply -f examples/openshift/kueue/spark-nonadmin-rbac.yaml
+```
+
+Verify the resources:
+
+```bash
+oc get workloadpriorityclasses
+oc get clusterqueue team-a-cq team-b-cq
+oc get localqueue team-a-lq team-b-lq -n spark-operator
+oc get serviceaccount spark-nonadmin -n spark-operator
+```
+
+The Kueue CR must have FairSharing enabled (`kueue-cr.yaml` includes this by default):
+
+```bash
+oc get kueues.kueue.openshift.io cluster -o jsonpath='{.spec.config.fairSharing}'
+```
+
+#### Run
+
+```bash
+cd /path/to/spark-operator
+
+KUBECONFIG=$HOME/.kube/config \
+go test -v -tags openshift ./examples/openshift/kueue/ \
+  -ginkgo.v \
+  -ginkgo.focus="Priority" \
+  -timeout 45m
+```
+
+Tests take ~15-17 minutes to complete (preemption lifecycle requires waiting for state transitions).
+
+#### What the Tests Validate
+
+**FairSharing (AC1):**
+- Two teams share a Cohort (`spark-cohort`) with equal quotas (2 CPU each)
+- Team A submits 2 apps (4 CPU total, borrowing from Team B's quota)
+- When Team B submits an app, Kueue reclaims borrowed quota from Team A
+- Team A's borrowing app is preempted/suspended, Team B is admitted
+
+**Priority-Based Scheduling (AC2):**
+- A blocker app fills a standalone 2 CPU queue
+- A non-admin user submits both a low-priority and high-priority app
+- After the blocker completes, Kueue admits the high-priority app first
+- Verified via Workload admission timestamps
+
+**Preemption & Resume Lifecycle (AC3/AC4):**
+
+```text
+Low-priority app:  Running -> Suspending -> Suspended (pods=0) -> Resuming -> New -> Submitted -> Running -> Completed
+High-priority app: Suspended -> Running -> Completed
+```
+
+Key assertions:
+- All driver and executor pods are deleted when the low-priority app is preempted
+- The resumed app gets a **new submission ID** (restart from scratch, not resume)
+- Pod count goes to zero during suspend, returns on resume
+
+#### Important: Cohort Configuration
+
+The FairSharing test requires ClusterQueues to be in a **Cohort**. In Kueue v1beta2, use `spec.cohortName` (not `spec.cohort`) to reference a Cohort CRD:
+
+```yaml
+apiVersion: kueue.x-k8s.io/v1beta2
+kind: Cohort
+metadata:
+  name: spark-cohort
+---
+apiVersion: kueue.x-k8s.io/v1beta2
+kind: ClusterQueue
+metadata:
+  name: team-a-cq
+spec:
+  cohortName: spark-cohort   # NOT spec.cohort
+```
+
+Without proper cohort configuration, ClusterQueues cannot borrow from each other and FairSharing has no effect.
+
+### Run All Kueue Tests
+
+```bash
+KUBECONFIG=$HOME/.kube/config \
+go test -v -tags openshift ./examples/openshift/kueue/ \
+  -ginkgo.v \
+  -ginkgo.focus="Kueue|Priority" \
+  -timeout 45m
+```
+
+### Verbose Output
+
+Add `-ginkgo.v` to see step-by-step progress and SparkApplication state transitions during each test.
 
 ## Cleanup
 
@@ -186,7 +300,11 @@ Tests take ~4 minutes to complete. Add `-ginkgo.v` to see step-by-step progress 
 # Delete all SparkApplications
 oc delete sparkapplication -n spark-operator --all
 
-# Delete Kueue resources
+# Delete priority/fairsharing resources (if applied)
+oc delete -f examples/openshift/kueue/kueue-priority-resources.yaml --ignore-not-found
+oc delete -f examples/openshift/kueue/spark-nonadmin-rbac.yaml --ignore-not-found
+
+# Delete basic Kueue resources
 oc delete -f examples/openshift/kueue/kueue-resources.yaml
 oc delete clusterrolebinding kueue-sparkapplication-finalizers
 oc delete clusterrole kueue-sparkapplication-finalizers
@@ -219,6 +337,20 @@ The Spark Operator is not deployed. Redeploy it:
 
 ```bash
 oc apply -k config/default/ --server-side=true --force-conflicts
+```
+
+### FairSharing test fails -- ClusterQueues not borrowing from each other
+
+Check that your ClusterQueues use `spec.cohortName` (not `spec.cohort`):
+
+```bash
+oc get clusterqueue team-a-cq -o jsonpath='{.spec.cohortName}'
+```
+
+If empty, update the ClusterQueue YAML to use `cohortName` and re-apply. Also verify the Cohort CRD exists:
+
+```bash
+oc get cohorts.kueue.x-k8s.io
 ```
 
 ### `install plan is not available` during bundle install
