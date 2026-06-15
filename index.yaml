@@ -3,9 +3,9 @@ entries:
   spark-operator:
   - apiVersion: v2
     appVersion: 2.4.0
-    created: "2026-05-05T14:08:26.579550327Z"
+    created: "2026-06-15T14:49:59.737864174Z"
     description: A Helm chart for Spark on Kubernetes operator.
-    digest: 6fa0975c0e87ffca077790ff6cb6e1e9f890d1e7e30ed41fff4fda63c188bc9b
+    digest: 6c0b42fc82770867c8b9b4616fe741caf8e08b08fae57f997036041e5cd153d5
     home: https://github.com/kubeflow/spark-operator
     keywords:
     - apache spark
@@ -19,7 +19,7 @@ entries:
       url: https://github.com/ChenYi015
     name: spark-operator
     urls:
-    - https://github.com/opendatahub-io/spark-operator/releases/download/odh-3.5.0-ea.1/spark-operator-2.4.0.tgz
+    - https://github.com/opendatahub-io/spark-operator/releases/download/odh-3.5.0-ea.2/spark-operator-2.4.0.tgz
     version: 2.4.0
   - apiVersion: v2
     appVersion: 2.3.0
@@ -41,4 +41,4 @@ entries:
     urls:
     - https://github.com/opendatahub-io/spark-operator/releases/download/spark-operator-2.3.0/spark-operator-2.3.0.tgz
     version: 2.3.0
-generated: "2026-05-05T14:08:26.573273298Z"
+generated: "2026-06-15T14:49:59.73148685Z"
