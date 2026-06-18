@@ -1,0 +1,33 @@
+apiVersion: kueue.x-k8s.io/v1beta2
+kind: ResourceFlavor
+metadata:
+  name: spark-rf
+---
+apiVersion: kueue.x-k8s.io/v1beta2
+kind: ClusterQueue
+metadata:
+  name: spark-cq
+spec:
+  namespaceSelector:
+    matchExpressions:
+      - key: kubernetes.io/metadata.name
+        operator: In
+        values:
+          - spark-operator
+  resourceGroups:
+  - coveredResources: ["cpu", "memory"]
+    flavors:
+    - name: spark-rf
+      resources:
+      - name: cpu
+        nominalQuota: 3
+      - name: memory
+        nominalQuota: 3Gi
+---
+apiVersion: kueue.x-k8s.io/v1beta2
+kind: LocalQueue
+metadata:
+  name: spark-lq
+  namespace: spark-operator
+spec:
+  clusterQueue: spark-cq

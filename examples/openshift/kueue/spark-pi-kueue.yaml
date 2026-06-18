@@ -1,0 +1,38 @@
+apiVersion: sparkoperator.k8s.io/v1beta2
+kind: SparkApplication
+metadata:
+  name: spark-pi-kueue
+  namespace: spark-operator
+  labels:
+    kueue.x-k8s.io/queue-name: spark-lq
+spec:
+  type: Scala
+  mode: cluster
+  image: ghcr.io/apache/spark-docker/spark:3.5.4
+  imagePullPolicy: IfNotPresent
+  mainClass: org.apache.spark.examples.SparkPi
+  mainApplicationFile: local:///opt/spark/examples/jars/spark-examples_2.12-3.5.4.jar
+  arguments:
+  - "1000"
+  sparkVersion: "3.5.4"
+  restartPolicy:
+    type: Never
+  volumes:
+  - name: spark-work-dir
+    emptyDir: {}
+  driver:
+    cores: 1
+    memory: 512m
+    serviceAccount: spark-operator-spark
+    securityContext: {}
+    volumeMounts:
+    - name: spark-work-dir
+      mountPath: /opt/spark/work-dir
+  executor:
+    instances: 1
+    cores: 1
+    memory: 512m
+    securityContext: {}
+    volumeMounts:
+    - name: spark-work-dir
+      mountPath: /opt/spark/work-dir
