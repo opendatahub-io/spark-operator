@@ -1,0 +1,200 @@
+# Kueue resources for multi-tenancy, queue independence, and gang scheduling tests.
+#
+# Creates:
+#   - 2 Namespaces (tenant-a, tenant-b) with Kueue managed label
+#   - 1 ResourceFlavor
+#   - 2 independent ClusterQueues (NO cohort — fully isolated)
+#   - 2 LocalQueues (one per tenant namespace)
+#   - 1 Gang scheduling ClusterQueue (tight quota: 2 CPU, fits exactly 1 SparkApp)
+#   - 1 Gang scheduling LocalQueue
+#   - ServiceAccount + RBAC for Spark driver in each tenant namespace
+#
+# Prerequisites:
+#   - Kueue CR with SparkApplication in frameworks list (see kueue-cr.yaml)
+#   - Spark Operator installed and watching tenant namespaces
+#
+# Apply with: oc apply -f examples/openshift/kueue/kueue-multitenancy-resources.yaml
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: tenant-a
+  labels:
+    kueue.openshift.io/managed: "true"
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: tenant-b
+  labels:
+    kueue.openshift.io/managed: "true"
+---
+apiVersion: kueue.x-k8s.io/v1beta2
+kind: ResourceFlavor
+metadata:
+  name: multitenancy-rf
+---
+# Independent ClusterQueue for Tenant A — NO cohort, fully isolated.
+apiVersion: kueue.x-k8s.io/v1beta2
+kind: ClusterQueue
+metadata:
+  name: tenant-a-cq
+spec:
+  namespaceSelector:
+    matchExpressions:
+      - key: kubernetes.io/metadata.name
+        operator: In
+        values:
+          - tenant-a
+  resourceGroups:
+  - coveredResources: ["cpu", "memory"]
+    flavors:
+    - name: multitenancy-rf
+      resources:
+      - name: cpu
+        nominalQuota: 3
+      - name: memory
+        nominalQuota: 3Gi
+---
+# Independent ClusterQueue for Tenant B — NO cohort, fully isolated.
+apiVersion: kueue.x-k8s.io/v1beta2
+kind: ClusterQueue
+metadata:
+  name: tenant-b-cq
+spec:
+  namespaceSelector:
+    matchExpressions:
+      - key: kubernetes.io/metadata.name
+        operator: In
+        values:
+          - tenant-b
+  resourceGroups:
+  - coveredResources: ["cpu", "memory"]
+    flavors:
+    - name: multitenancy-rf
+      resources:
+      - name: cpu
+        nominalQuota: 3
+      - name: memory
+        nominalQuota: 3Gi
+---
+apiVersion: kueue.x-k8s.io/v1beta2
+kind: LocalQueue
+metadata:
+  name: tenant-a-lq
+  namespace: tenant-a
+spec:
+  clusterQueue: tenant-a-cq
+---
+apiVersion: kueue.x-k8s.io/v1beta2
+kind: LocalQueue
+metadata:
+  name: tenant-b-lq
+  namespace: tenant-b
+spec:
+  clusterQueue: tenant-b-cq
+---
+# Gang scheduling ClusterQueue — exactly 2 CPU so only 1 SparkApp
+# (1 driver + 1 executor, each 1 CPU) fits at a time.
+apiVersion: kueue.x-k8s.io/v1beta2
+kind: ClusterQueue
+metadata:
+  name: gang-cq
+spec:
+  namespaceSelector:
+    matchExpressions:
+      - key: kubernetes.io/metadata.name
+        operator: In
+        values:
+          - spark-operator
+  resourceGroups:
+  - coveredResources: ["cpu", "memory"]
+    flavors:
+    - name: multitenancy-rf
+      resources:
+      - name: cpu
+        nominalQuota: 2
+      - name: memory
+        nominalQuota: 2Gi
+---
+apiVersion: kueue.x-k8s.io/v1beta2
+kind: LocalQueue
+metadata:
+  name: gang-lq
+  namespace: spark-operator
+spec:
+  clusterQueue: gang-cq
+---
+# ServiceAccount and RBAC for Spark driver in tenant-a
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: spark-operator-spark
+  namespace: tenant-a
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: spark-driver-role
+  namespace: tenant-a
+rules:
+- apiGroups: [""]
+  resources: ["pods"]
+  verbs: ["get", "list", "watch", "create", "delete"]
+- apiGroups: [""]
+  resources: ["configmaps"]
+  verbs: ["get", "list", "watch", "create", "update", "delete"]
+- apiGroups: [""]
+  resources: ["services"]
+  verbs: ["get", "list", "watch", "create", "delete"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: spark-driver-binding
+  namespace: tenant-a
+subjects:
+- kind: ServiceAccount
+  name: spark-operator-spark
+  namespace: tenant-a
+roleRef:
+  kind: Role
+  name: spark-driver-role
+  apiGroup: rbac.authorization.k8s.io
+---
+# ServiceAccount and RBAC for Spark driver in tenant-b
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: spark-operator-spark
+  namespace: tenant-b
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: spark-driver-role
+  namespace: tenant-b
+rules:
+- apiGroups: [""]
+  resources: ["pods"]
+  verbs: ["get", "list", "watch", "create", "delete"]
+- apiGroups: [""]
+  resources: ["configmaps"]
+  verbs: ["get", "list", "watch", "create", "update", "delete"]
+- apiGroups: [""]
+  resources: ["services"]
+  verbs: ["get", "list", "watch", "create", "delete"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: spark-driver-binding
+  namespace: tenant-b
+subjects:
+- kind: ServiceAccount
+  name: spark-operator-spark
+  namespace: tenant-b
+roleRef:
+  kind: Role
+  name: spark-driver-role
+  apiGroup: rbac.authorization.k8s.io
