@@ -80,6 +80,7 @@ func main() {
 		Client:                mgr.GetClient(),
 		Scheme:                mgr.GetScheme(),
 		ManifestsTemplatePath: manifestsTemplatePath,
+		Deployer:              sparkoperatormodule.NewDeployer(),
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "spark-operator-module")
 		os.Exit(1)

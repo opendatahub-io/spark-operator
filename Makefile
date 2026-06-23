@@ -105,17 +105,15 @@ print-%: ; @echo $*=$($*)
 
 ##@ Development
 
-# Workload-operator codegen paths only. spark-operator-module/ is a separate nested
-# Go module; use make generate-spark-operator-module / manifests-spark-operator-module.
-WORKLOAD_OPERATOR_CODEGEN_PATHS := ./api/...;./cmd/...;./internal/...;./pkg/...
+CONTROLLER_GEN_PATHS := ./api/...;./cmd/...;./internal/...
 
 .PHONY: manifests
 manifests: controller-gen ## Generate CustomResourceDefinition, RBAC and WebhookConfiguration manifests.
-	$(CONTROLLER_GEN) crd:generateEmbeddedObjectMeta=true rbac:roleName=spark-operator-controller webhook paths="$(WORKLOAD_OPERATOR_CODEGEN_PATHS)" output:crd:artifacts:config=config/crd/bases
+	$(CONTROLLER_GEN) crd:generateEmbeddedObjectMeta=true rbac:roleName=spark-operator-controller webhook paths="$(CONTROLLER_GEN_PATHS)" output:crd:artifacts:config=config/crd/bases
 
 .PHONY: generate
 generate: controller-gen manifests ## Generate Go code and Python APIs.
-	$(CONTROLLER_GEN) object:headerFile="hack/boilerplate.go.txt" paths="$(WORKLOAD_OPERATOR_CODEGEN_PATHS)"
+	$(CONTROLLER_GEN) object:headerFile="hack/boilerplate.go.txt" paths="$(CONTROLLER_GEN_PATHS)"
 	$(MAKE) python-api
 
 .PHONY: update-crd
