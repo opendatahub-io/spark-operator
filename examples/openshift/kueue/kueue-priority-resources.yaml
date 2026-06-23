@@ -1,0 +1,139 @@
+# Kueue resources for priority-based scheduling, fair sharing, and preemption tests.
+#
+# Creates:
+#   - 2 WorkloadPriorityClasses (high/low)
+#   - 1 ResourceFlavor
+#   - 2 ClusterQueues in a cohort with FairSharing and preemption enabled
+#   - 2 LocalQueues (team-a, team-b)
+#
+# Prerequisites:
+#   - Kueue CR must have fairSharing.enable: true (see kueue-cr.yaml)
+#
+# Apply with: oc apply -f examples/openshift/kueue/kueue-priority-resources.yaml
+---
+apiVersion: kueue.x-k8s.io/v1beta2
+kind: WorkloadPriorityClass
+metadata:
+  name: spark-high-priority
+value: 10000
+description: "High priority Spark workloads — admitted and preempt before low priority"
+---
+apiVersion: kueue.x-k8s.io/v1beta2
+kind: WorkloadPriorityClass
+metadata:
+  name: spark-low-priority
+value: 100
+description: "Low priority Spark workloads — may be preempted by higher priority"
+---
+apiVersion: kueue.x-k8s.io/v1beta2
+kind: ResourceFlavor
+metadata:
+  name: spark-priority-rf
+---
+apiVersion: kueue.x-k8s.io/v1beta2
+kind: Cohort
+metadata:
+  name: spark-cohort
+---
+apiVersion: kueue.x-k8s.io/v1beta2
+kind: ClusterQueue
+metadata:
+  name: team-a-cq
+spec:
+  cohortName: spark-cohort
+  namespaceSelector:
+    matchExpressions:
+      - key: kubernetes.io/metadata.name
+        operator: In
+        values:
+          - spark-operator
+  fairSharing:
+    weight: 1
+  preemption:
+    reclaimWithinCohort: Any
+    withinClusterQueue: LowerPriority
+  resourceGroups:
+  - coveredResources: ["cpu", "memory"]
+    flavors:
+    - name: spark-priority-rf
+      resources:
+      - name: cpu
+        nominalQuota: 2
+      - name: memory
+        nominalQuota: 2Gi
+---
+apiVersion: kueue.x-k8s.io/v1beta2
+kind: ClusterQueue
+metadata:
+  name: team-b-cq
+spec:
+  cohortName: spark-cohort
+  namespaceSelector:
+    matchExpressions:
+      - key: kubernetes.io/metadata.name
+        operator: In
+        values:
+          - spark-operator
+  fairSharing:
+    weight: 1
+  preemption:
+    reclaimWithinCohort: Any
+    withinClusterQueue: LowerPriority
+  resourceGroups:
+  - coveredResources: ["cpu", "memory"]
+    flavors:
+    - name: spark-priority-rf
+      resources:
+      - name: cpu
+        nominalQuota: 2
+      - name: memory
+        nominalQuota: 2Gi
+---
+# Standalone CQ for priority ordering and preemption tests (AC2, AC3, AC4).
+# NOT in a cohort — exactly 2 CPU so only 1 SparkApp (1 driver + 1 executor) fits.
+apiVersion: kueue.x-k8s.io/v1beta2
+kind: ClusterQueue
+metadata:
+  name: priority-cq
+spec:
+  namespaceSelector:
+    matchExpressions:
+      - key: kubernetes.io/metadata.name
+        operator: In
+        values:
+          - spark-operator
+  preemption:
+    withinClusterQueue: LowerPriority
+  resourceGroups:
+  - coveredResources: ["cpu", "memory"]
+    flavors:
+    - name: spark-priority-rf
+      resources:
+      - name: cpu
+        nominalQuota: 2
+      - name: memory
+        nominalQuota: 2Gi
+---
+apiVersion: kueue.x-k8s.io/v1beta2
+kind: LocalQueue
+metadata:
+  name: team-a-lq
+  namespace: spark-operator
+spec:
+  clusterQueue: team-a-cq
+---
+apiVersion: kueue.x-k8s.io/v1beta2
+kind: LocalQueue
+metadata:
+  name: team-b-lq
+  namespace: spark-operator
+spec:
+  clusterQueue: team-b-cq
+---
+apiVersion: kueue.x-k8s.io/v1beta2
+kind: LocalQueue
+metadata:
+  name: priority-lq
+  namespace: spark-operator
+spec:
+  clusterQueue: priority-cq
