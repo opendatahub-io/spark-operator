@@ -159,6 +159,8 @@ Automated Ginkgo tests are in `examples/openshift/kueue/`. They cover:
 |------|------------|-------------|
 | `kueue_test.go` | Basic Admission | AC1-AC4: Admission, quota enforcement, reclamation, resume after suspension |
 | `kueue_validation_test.go` | Validation & Lifecycle | AC1-AC6: Dynamic alloc rejection, pod cleanup, events, non-Kueue regression |
+| `kueue_priority_test.go` | Priority & FairSharing | FairSharing, priority-based scheduling, preemption lifecycle |
+| `kueue_multitenancy_test.go` | Multi-Tenancy | Cross-namespace isolation, per-tenant quota, shared cohort borrowing |
 
 ### `kueue_test.go` — Basic Admission Tests
 
@@ -191,7 +193,9 @@ cd /path/to/spark-operator
 
 KUBECONFIG=$HOME/.kube/config \
 go test -v -tags openshift ./examples/openshift/kueue/ \
-  -ginkgo.v -timeout 35m
+  -ginkgo.v \
+  -ginkgo.focus="Kueue|Priority|Multi-Tenancy|Validation" \
+  -timeout 60m
 ```
 
 ### Run Only Basic Admission Tests
@@ -210,7 +214,9 @@ go test -v -tags openshift ./examples/openshift/kueue/ \
   -ginkgo.v -ginkgo.focus="Validation" -timeout 35m
 ```
 
-Tests take ~4-8 minutes to complete depending on test scope. Add `-ginkgo.v` to see step-by-step progress and SparkApplication state transitions.
+### Verbose Output
+
+Tests take ~4-8 minutes for basic/validation tests, ~15-17 minutes for priority tests. Add `-ginkgo.v` to see step-by-step progress and SparkApplication state transitions during each test.
 
 ## Cleanup
 
