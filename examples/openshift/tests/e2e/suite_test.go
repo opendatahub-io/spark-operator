@@ -64,9 +64,6 @@ const (
 	ReleaseNamespace = "spark-operator"
 	TestNamespace    = "spark-test"
 
-	MutatingWebhookName   = "spark-operator-webhook"
-	ValidatingWebhookName = "spark-operator-webhook"
-
 	PollInterval = 1 * time.Second
 	WaitTimeout  = 5 * time.Minute
 
@@ -83,6 +80,9 @@ var (
 	installMethod string
 	repoRoot      string
 	origParamsEnv []byte
+
+	mutatingWebhookName   string
+	validatingWebhookName string
 )
 
 func TestSparkOperator(t *testing.T) {
@@ -102,6 +102,15 @@ var _ = BeforeSuite(func() {
 		installMethod = InstallMethodHelm
 	}
 	logf.Log.Info("Using install method", "method", installMethod)
+
+	switch installMethod {
+	case InstallMethodKustomize, InstallMethodPreinstalled:
+		mutatingWebhookName = "mutating-webhook-configuration"
+		validatingWebhookName = "validating-webhook-configuration"
+	default:
+		mutatingWebhookName = "spark-operator-webhook"
+		validatingWebhookName = "spark-operator-webhook"
+	}
 
 	By("Bootstrapping test environment")
 	testEnv = &envtest.Environment{
@@ -176,12 +185,17 @@ var _ = BeforeSuite(func() {
 	}
 
 	By("Waiting for the webhooks to be ready")
-	mutatingWebhookKey := types.NamespacedName{Name: MutatingWebhookName}
-	validatingWebhookKey := types.NamespacedName{Name: ValidatingWebhookName}
+	mutatingWebhookKey := types.NamespacedName{Name: mutatingWebhookName}
+	validatingWebhookKey := types.NamespacedName{Name: validatingWebhookName}
 	Expect(waitForMutatingWebhookReady(context.Background(), mutatingWebhookKey)).NotTo(HaveOccurred())
 	Expect(waitForValidatingWebhookReady(context.Background(), validatingWebhookKey)).NotTo(HaveOccurred())
 	// TODO: Remove this when there is a better way to ensure the webhooks are ready before running the e2e tests.
 	time.Sleep(10 * time.Second)
+
+	if installMethod == InstallMethodKustomize || installMethod == InstallMethodPreinstalled {
+		By("Patching webhook namespaceSelectors to include test namespace")
+		patchWebhookNamespaceSelectors(mutatingWebhookKey, validatingWebhookKey)
+	}
 
 	By("Ensuring clean state for test namespace")
 	testNamespace := &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: TestNamespace}}
@@ -210,51 +224,60 @@ var _ = BeforeSuite(func() {
 		Expect(err).NotTo(HaveOccurred(), "Failed to check test namespace existence")
 	}
 
-	By("Copying Spark service account and RBAC from operator namespace to test namespace")
-	srcSA := &corev1.ServiceAccount{}
-	Expect(k8sClient.Get(context.TODO(), types.NamespacedName{
-		Name: "spark-operator-spark", Namespace: ReleaseNamespace,
-	}, srcSA)).NotTo(HaveOccurred(), "Failed to get spark ServiceAccount from operator namespace %s", ReleaseNamespace)
-	srcSA.Namespace = TestNamespace
-	srcSA.ResourceVersion = ""
-	srcSA.UID = ""
-	srcSA.CreationTimestamp = metav1.Time{}
-	srcSA.OwnerReferences = nil
-	srcSA.Finalizers = nil
-	srcSA.ManagedFields = nil
-	srcSA.Secrets = nil
-	Expect(k8sClient.Create(context.TODO(), srcSA)).NotTo(HaveOccurred())
+	if installMethod == InstallMethodKustomize || installMethod == InstallMethodPreinstalled {
+		By("Applying Spark job RBAC to test namespace")
+		sparkRBACDir := filepath.Join(repoRoot, "config", "spark-rbac")
+		rbacCmd := exec.Command("kubectl", "apply", "-k", sparkRBACDir, "-n", TestNamespace, "--server-side", "--force-conflicts")
+		output, err := rbacCmd.CombinedOutput()
+		logf.Log.Info("kubectl apply -k spark-rbac output", "output", string(output))
+		Expect(err).NotTo(HaveOccurred(), "Failed to apply Spark job RBAC to test namespace")
+	} else {
+		By("Copying Spark service account and RBAC from operator namespace to test namespace")
+		srcSA := &corev1.ServiceAccount{}
+		Expect(k8sClient.Get(context.TODO(), types.NamespacedName{
+			Name: "spark-operator-spark", Namespace: ReleaseNamespace,
+		}, srcSA)).NotTo(HaveOccurred(), "Failed to get spark ServiceAccount from operator namespace %s", ReleaseNamespace)
+		srcSA.Namespace = TestNamespace
+		srcSA.ResourceVersion = ""
+		srcSA.UID = ""
+		srcSA.CreationTimestamp = metav1.Time{}
+		srcSA.OwnerReferences = nil
+		srcSA.Finalizers = nil
+		srcSA.ManagedFields = nil
+		srcSA.Secrets = nil
+		Expect(k8sClient.Create(context.TODO(), srcSA)).NotTo(HaveOccurred())
 
-	srcRole := &rbacv1.Role{}
-	Expect(k8sClient.Get(context.TODO(), types.NamespacedName{
-		Name: "spark-operator-role", Namespace: ReleaseNamespace,
-	}, srcRole)).NotTo(HaveOccurred(), "Failed to get spark Role from operator namespace %s", ReleaseNamespace)
-	srcRole.Namespace = TestNamespace
-	srcRole.ResourceVersion = ""
-	srcRole.UID = ""
-	srcRole.CreationTimestamp = metav1.Time{}
-	srcRole.OwnerReferences = nil
-	srcRole.Finalizers = nil
-	srcRole.ManagedFields = nil
-	Expect(k8sClient.Create(context.TODO(), srcRole)).NotTo(HaveOccurred())
+		srcRole := &rbacv1.Role{}
+		Expect(k8sClient.Get(context.TODO(), types.NamespacedName{
+			Name: "spark-operator-role", Namespace: ReleaseNamespace,
+		}, srcRole)).NotTo(HaveOccurred(), "Failed to get spark Role from operator namespace %s", ReleaseNamespace)
+		srcRole.Namespace = TestNamespace
+		srcRole.ResourceVersion = ""
+		srcRole.UID = ""
+		srcRole.CreationTimestamp = metav1.Time{}
+		srcRole.OwnerReferences = nil
+		srcRole.Finalizers = nil
+		srcRole.ManagedFields = nil
+		Expect(k8sClient.Create(context.TODO(), srcRole)).NotTo(HaveOccurred())
 
-	srcRB := &rbacv1.RoleBinding{}
-	Expect(k8sClient.Get(context.TODO(), types.NamespacedName{
-		Name: "spark-operator-rolebinding", Namespace: ReleaseNamespace,
-	}, srcRB)).NotTo(HaveOccurred(), "Failed to get spark RoleBinding from operator namespace %s", ReleaseNamespace)
-	srcRB.Namespace = TestNamespace
-	srcRB.ResourceVersion = ""
-	srcRB.UID = ""
-	srcRB.CreationTimestamp = metav1.Time{}
-	srcRB.OwnerReferences = nil
-	srcRB.Finalizers = nil
-	srcRB.ManagedFields = nil
-	for i := range srcRB.Subjects {
-		if srcRB.Subjects[i].Kind == "ServiceAccount" {
-			srcRB.Subjects[i].Namespace = TestNamespace
+		srcRB := &rbacv1.RoleBinding{}
+		Expect(k8sClient.Get(context.TODO(), types.NamespacedName{
+			Name: "spark-operator-rolebinding", Namespace: ReleaseNamespace,
+		}, srcRB)).NotTo(HaveOccurred(), "Failed to get spark RoleBinding from operator namespace %s", ReleaseNamespace)
+		srcRB.Namespace = TestNamespace
+		srcRB.ResourceVersion = ""
+		srcRB.UID = ""
+		srcRB.CreationTimestamp = metav1.Time{}
+		srcRB.OwnerReferences = nil
+		srcRB.Finalizers = nil
+		srcRB.ManagedFields = nil
+		for i := range srcRB.Subjects {
+			if srcRB.Subjects[i].Kind == "ServiceAccount" {
+				srcRB.Subjects[i].Namespace = TestNamespace
+			}
 		}
+		Expect(k8sClient.Create(context.TODO(), srcRB)).NotTo(HaveOccurred())
 	}
-	Expect(k8sClient.Create(context.TODO(), srcRB)).NotTo(HaveOccurred())
 })
 
 var _ = AfterSuite(func() {
@@ -270,6 +293,15 @@ var _ = AfterSuite(func() {
 	if strings.EqualFold(cleanup, "false") {
 		logf.Log.Info("CLEANUP=false, skipping uninstall")
 	} else {
+		if installMethod == InstallMethodKustomize || installMethod == InstallMethodPreinstalled {
+			By("Cleaning up Spark job RBAC from test namespace")
+			sparkRBACDir := filepath.Join(repoRoot, "config", "spark-rbac")
+			rbacDelCmd := exec.Command("kubectl", "delete", "-k", sparkRBACDir, "-n", TestNamespace, "--ignore-not-found", "--timeout=60s")
+			rbacDelCmd.Stdout = GinkgoWriter
+			rbacDelCmd.Stderr = GinkgoWriter
+			_ = rbacDelCmd.Run()
+		}
+
 		By("Deleting test namespace")
 		testNamespace := &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: TestNamespace}}
 		Expect(k8sClient.Delete(context.TODO(), testNamespace)).NotTo(HaveOccurred())
@@ -475,6 +507,38 @@ func waitForValidatingWebhookReady(ctx context.Context, key types.NamespacedName
 		return true, nil
 	})
 	return err
+}
+
+func patchWebhookNamespaceSelectors(mutatingKey, validatingKey types.NamespacedName) {
+	mw := &admissionregistrationv1.MutatingWebhookConfiguration{}
+	Expect(k8sClient.Get(context.TODO(), mutatingKey, mw)).NotTo(HaveOccurred())
+	for i := range mw.Webhooks {
+		appendToNamespaceSelector(mw.Webhooks[i].NamespaceSelector, TestNamespace)
+	}
+	Expect(k8sClient.Update(context.TODO(), mw)).NotTo(HaveOccurred())
+
+	vw := &admissionregistrationv1.ValidatingWebhookConfiguration{}
+	Expect(k8sClient.Get(context.TODO(), validatingKey, vw)).NotTo(HaveOccurred())
+	for i := range vw.Webhooks {
+		appendToNamespaceSelector(vw.Webhooks[i].NamespaceSelector, TestNamespace)
+	}
+	Expect(k8sClient.Update(context.TODO(), vw)).NotTo(HaveOccurred())
+}
+
+func appendToNamespaceSelector(selector *metav1.LabelSelector, namespace string) {
+	if selector == nil {
+		return
+	}
+	for i, expr := range selector.MatchExpressions {
+		if expr.Key == "kubernetes.io/metadata.name" && expr.Operator == metav1.LabelSelectorOpIn {
+			for _, v := range expr.Values {
+				if v == namespace {
+					return
+				}
+			}
+			selector.MatchExpressions[i].Values = append(selector.MatchExpressions[i].Values, namespace)
+		}
+	}
 }
 
 func waitForSparkApplicationCompleted(ctx context.Context, key types.NamespacedName) error {
