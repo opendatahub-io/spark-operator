@@ -1,0 +1,73 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: spark-history-server
+  namespace: spark-test
+  labels:
+    app: spark-history-server
+spec:
+  selector:
+    matchLabels:
+      app: spark-history-server
+  template:
+    metadata:
+      labels:
+        app: spark-history-server
+    spec:
+      serviceAccountName: spark-operator-spark
+      containers:
+      - name: spark-history-server
+        image: quay.io/ssankepe/spark-s3:4.0.1
+        imagePullPolicy: Always
+        command: ["/opt/spark/sbin/start-history-server.sh"]
+        env:
+        - name: AWS_ACCESS_KEY_ID
+          valueFrom:
+            secretKeyRef:
+              name: spark-minio-credentials
+              key: AWS_ACCESS_KEY_ID
+        - name: AWS_SECRET_ACCESS_KEY
+          valueFrom:
+            secretKeyRef:
+              name: spark-minio-credentials
+              key: AWS_SECRET_ACCESS_KEY
+        - name: SPARK_NO_DAEMONIZE
+          value: "true"
+        - name: SPARK_HISTORY_OPTS
+          value: >-
+            -Dspark.history.fs.logDirectory=s3a://spark-event-logs/
+            -Dspark.hadoop.fs.s3a.endpoint=http://minio.minio.svc.cluster.local:9000
+            -Dspark.hadoop.fs.s3a.impl=org.apache.hadoop.fs.s3a.S3AFileSystem
+            -Dspark.hadoop.fs.s3a.path.style.access=true
+            -Dspark.hadoop.fs.s3a.connection.ssl.enabled=false
+            -Dspark.hadoop.fs.s3a.access.key=${AWS_ACCESS_KEY_ID}
+            -Dspark.hadoop.fs.s3a.secret.key=${AWS_SECRET_ACCESS_KEY}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: spark-history-server
+  namespace: spark-test
+spec:
+  selector:
+    app: spark-history-server
+  ports:
+  - port: 18080
+    targetPort: 18080
+---
+apiVersion: route.openshift.io/v1
+kind: Route
+metadata:
+  name: spark-history-server
+  namespace: spark-test
+  labels:
+    app: spark-history-server
+spec:
+  port:
+    targetPort: 18080
+  to:
+    kind: Service
+    name: spark-history-server
+  tls:
+    termination: edge
+    insecureEdgeTerminationPolicy: Redirect

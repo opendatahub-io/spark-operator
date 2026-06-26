@@ -1,0 +1,62 @@
+apiVersion: sparkoperator.k8s.io/v1beta2
+kind: SparkApplication
+metadata:
+  name: spark-pi-eventlog
+  namespace: spark-test
+spec:
+  type: Scala
+  mode: cluster
+  image: quay.io/ssankepe/spark-s3:4.0.1
+  imagePullPolicy: Always
+  mainClass: org.apache.spark.examples.SparkPi
+  mainApplicationFile: local:///opt/spark/examples/jars/spark-examples.jar
+  arguments:
+    - "1000"
+  sparkVersion: "4.0.1"
+
+  restartPolicy:
+    type: Never
+
+  sparkConf:
+    # Enable event logging
+    "spark.eventLog.enabled": "true"
+    "spark.eventLog.dir": "s3a://spark-event-logs/"
+    "spark.eventLog.compress": "true"
+
+    # MinIO S3 configuration
+    "spark.hadoop.fs.s3a.endpoint": "http://minio.minio.svc.cluster.local:9000"
+    "spark.hadoop.fs.s3a.impl": "org.apache.hadoop.fs.s3a.S3AFileSystem"
+    "spark.hadoop.fs.s3a.path.style.access": "true"
+    "spark.hadoop.fs.s3a.connection.ssl.enabled": "false"
+
+  driver:
+    cores: 1
+    memory: "1000m"
+    serviceAccount: spark-operator-spark
+    env:
+    - name: AWS_ACCESS_KEY_ID
+      valueFrom:
+        secretKeyRef:
+          name: spark-minio-credentials
+          key: AWS_ACCESS_KEY_ID
+    - name: AWS_SECRET_ACCESS_KEY
+      valueFrom:
+        secretKeyRef:
+          name: spark-minio-credentials
+          key: AWS_SECRET_ACCESS_KEY
+
+  executor:
+    cores: 1
+    instances: 2
+    memory: "1000m"
+    env:
+    - name: AWS_ACCESS_KEY_ID
+      valueFrom:
+        secretKeyRef:
+          name: spark-minio-credentials
+          key: AWS_ACCESS_KEY_ID
+    - name: AWS_SECRET_ACCESS_KEY
+      valueFrom:
+        secretKeyRef:
+          name: spark-minio-credentials
+          key: AWS_SECRET_ACCESS_KEY
