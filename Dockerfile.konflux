@@ -11,8 +11,7 @@ USER 0
 WORKDIR /workspace
 
 RUN --mount=type=cache,target=/go/pkg/mod/ \
-    --mount=type=bind,source=go.mod,target=go.mod \
-    --mount=type=bind,source=go.sum,target=go.sum \
+    --mount=type=bind,source=.,target=. \
     go mod download
 
 COPY . .
