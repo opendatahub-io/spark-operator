@@ -28,8 +28,6 @@ cleanup() {
 }
 trap "cleanup" EXIT SIGINT
 
-cleanup
-
 for root in "${DIFF_ROOTS[@]}"; do
   rel="${root#"${SCRIPT_ROOT}/"}"
   mkdir -p "${_tmp}/${rel}"
