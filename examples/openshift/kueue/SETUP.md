@@ -153,9 +153,14 @@ oc get events -n spark-operator --sort-by='.lastTimestamp' | tail -20
 
 ## Running the Automated E2E Tests
 
-### Basic Integration Tests
+Automated Ginkgo tests are in `examples/openshift/kueue/`. They cover:
 
-Automated Ginkgo tests are in `examples/openshift/kueue/kueue_test.go`. They cover:
+| File | Test Suite | Description |
+|------|------------|-------------|
+| `kueue_test.go` | Basic Admission | AC1-AC4: Admission, quota enforcement, reclamation, resume after suspension |
+| `kueue_validation_test.go` | Validation & Lifecycle | AC1-AC6: Dynamic alloc rejection, pod cleanup, events, non-Kueue regression |
+
+### `kueue_test.go` — Basic Admission Tests
 
 | Test | Description |
 |------|-------------|
@@ -164,11 +169,22 @@ Automated Ginkgo tests are in `examples/openshift/kueue/kueue_test.go`. They cov
 | AC3 | Quota reclamation (queued job admitted after completing job frees quota) |
 | AC4 | Resume after suspension (suspended job runs to completion when quota freed) |
 
-#### Prerequisites
+### `kueue_validation_test.go` — Validation, Lifecycle Cleanup & Event Visibility
+
+| Test | Description |
+|------|-------------|
+| AC1 | Dynamic allocation validation (`dynamicAllocation.enabled=true` is rejected or reaches terminal state) |
+| AC2 | Pod cleanup after successful completion (no orphan executor pods) |
+| AC3 | Pod cleanup after failure (driver crash, no orphan executor pods) |
+| AC4 | No orphan pods after Kueue suspend/resume lifecycle |
+| AC5 | Event visibility (Workload conditions and Kueue-related events are queryable) |
+| AC6 | Non-Kueue regression (standard SparkApp without queue label completes cleanly) |
+
+### Prerequisites
 
 Complete steps 1-6 above.
 
-#### Run
+### Run All Kueue Tests
 
 ```bash
 cd /path/to/spark-operator
@@ -176,11 +192,29 @@ cd /path/to/spark-operator
 KUBECONFIG=$HOME/.kube/config \
 go test -v -tags openshift ./examples/openshift/kueue/ \
   -ginkgo.v \
-  -ginkgo.focus="Kueue SparkApplication Integration" \
-  -timeout 35m
+  -ginkgo.focus="Kueue|Priority|Multi-Tenancy|Validation" \
+  -timeout 60m
 ```
 
-Tests take ~4 minutes to complete.
+### Run Only Basic Admission Tests
+
+```bash
+KUBECONFIG=$HOME/.kube/config \
+go test -v -tags openshift ./examples/openshift/kueue/ \
+  -ginkgo.v -ginkgo.focus="Kueue SparkApplication Integration" -timeout 35m
+```
+
+### Run Only Validation & Lifecycle Tests
+
+```bash
+KUBECONFIG=$HOME/.kube/config \
+go test -v -tags openshift ./examples/openshift/kueue/ \
+  -ginkgo.v -ginkgo.focus="Validation" -timeout 35m
+```
+
+### Verbose Output
+
+Tests take ~4-8 minutes for basic/validation tests, ~15-17 minutes for priority tests. Add `-ginkgo.v` to see step-by-step progress and SparkApplication state transitions during each test.
 
 ### Priority, FairSharing & Preemption Tests
 
@@ -280,20 +314,6 @@ spec:
 
 Without proper cohort configuration, ClusterQueues cannot borrow from each other and FairSharing has no effect.
 
-### Run All Kueue Tests
-
-```bash
-KUBECONFIG=$HOME/.kube/config \
-go test -v -tags openshift ./examples/openshift/kueue/ \
-  -ginkgo.v \
-  -ginkgo.focus="Kueue|Priority|Multi-Tenancy" \
-  -timeout 60m
-```
-
-### Verbose Output
-
-Add `-ginkgo.v` to see step-by-step progress and SparkApplication state transitions during each test.
-
 ## Cleanup
 
 ```bash
@@ -334,6 +354,20 @@ The namespace is missing the managed label. Apply it:
 
 ```bash
 oc label namespace spark-operator kueue.openshift.io/managed=true --overwrite
+```
+
+### `x509: certificate signed by unknown authority` on SparkApplication create
+
+If there are two Spark Operator installations (e.g., one from RHOAI in `redhat-ods-applications` and one from `oc apply -k` in `spark-operator`), their webhook pods fight over the MutatingWebhookConfiguration CA bundle, causing intermittent TLS failures.
+
+Fix: remove the conflicting webhook deployment and let the RHOAI one own the config:
+
+```bash
+oc delete deployment spark-operator-webhook -n spark-operator
+oc delete service spark-operator-webhook-svc -n spark-operator
+oc delete mutatingwebhookconfiguration spark-operator-webhook
+oc delete validatingwebhookconfiguration spark-operator-webhook
+oc rollout restart deployment spark-operator-webhook -n redhat-ods-applications
 ```
 
 ### `service "spark-operator-webhook-svc" not found`
