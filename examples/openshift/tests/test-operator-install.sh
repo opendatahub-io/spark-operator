@@ -47,6 +47,7 @@ cleanup() {
     # Set CLEANUP=false to keep operator for subsequent tests
     if [ "${CLEANUP:-true}" = "true" ]; then
         log "Cleaning up..."
+        $CLI delete -k "$REPO_ROOT/config/spark-rbac/" -n "$RELEASE_NAMESPACE" 2>/dev/null || true
         $CLI delete -k "$REPO_ROOT/config/default/" 2>/dev/null || true
     else
         log "Keeping operator installed (CLEANUP=false)"
@@ -82,6 +83,11 @@ $CLI wait --for=condition=Available deployment \
     --timeout="$TIMEOUT"
 
 pass "All operator deployments are available"
+
+# Apply Spark job RBAC (ServiceAccount, Role, RoleBinding) for driver pods
+log "Applying Spark job RBAC to $RELEASE_NAMESPACE namespace..."
+$CLI apply -k "$REPO_ROOT/config/spark-rbac/" -n "$RELEASE_NAMESPACE" --server-side=true
+pass "Spark job RBAC applied"
 
 # ============================================================================
 # Test 1: Verify Installation

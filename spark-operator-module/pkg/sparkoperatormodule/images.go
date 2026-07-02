@@ -1,0 +1,6 @@
+package sparkoperatormodule
+
+var sparkOperatorImageParamMap = map[string]string{
+	"SPARK_OPERATOR_CONTROLLER_IMAGE": "RELATED_IMAGE_ODH_SPARK_OPERATOR_IMAGE",
+	"SPARK_OPERATOR_WEBHOOK_IMAGE":    "RELATED_IMAGE_ODH_SPARK_OPERATOR_IMAGE",
+}
