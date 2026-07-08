@@ -35,16 +35,24 @@ manifests-spark-operator-module: controller-gen
 		paths=./spark-operator-module/pkg/apis/v1alpha1/... \
 		output:crd:artifacts:config=spark-operator-module/config/crd
 
-test-spark-operator-module:
-	cd spark-operator-module && go test ./pkg/... -count=1
+test-spark-operator-module: envtest
+	cd spark-operator-module && \
+	KUBEBUILDER_ASSETS="$$($(ENVTEST) use $(ENVTEST_K8S_VERSION) --bin-dir $(LOCALBIN) -p path)" \
+	go test ./... -count=1
+
+setup-envtest-spark-operator-module: envtest
+	@$(ENVTEST) use $(ENVTEST_K8S_VERSION) --bin-dir $(LOCALBIN) -p path
 
 precommit-som: generate-spark-operator-module manifests-spark-operator-module test-spark-operator-module
 	cd spark-operator-module && go mod tidy && go vet ./... && go build ./...
 
 check-som: precommit-som
-	@if [ -n "$$(git status -s spark-operator-module/ spark-operator-module-controller.Dockerfile Makefile.spark-operator-module.mk)" ]; then \
+	@if [ -n "$$(git status -s spark-operator-module/ spark-operator-module-controller.Dockerfile Makefile.spark-operator-module.mk .github/workflows/spark-operator-module-ci.yaml)" ]; then \
 		echo "ERROR: Git working tree is not clean after precommit-som."; \
-		git status -s spark-operator-module/ spark-operator-module-controller.Dockerfile Makefile.spark-operator-module.mk; \
+		echo ""; \
+		git status -s spark-operator-module/ spark-operator-module-controller.Dockerfile Makefile.spark-operator-module.mk .github/workflows/spark-operator-module-ci.yaml; \
+		echo ""; \
+		git diff --stat spark-operator-module/ spark-operator-module-controller.Dockerfile Makefile.spark-operator-module.mk .github/workflows/spark-operator-module-ci.yaml; \
 		exit 1; \
 	fi
 	$(MAKE) manifests generate
