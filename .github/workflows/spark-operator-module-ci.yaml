@@ -1,0 +1,47 @@
+name: Spark Operator Module CI
+
+on:
+  pull_request:
+    paths:
+      - "spark-operator-module/**"
+      - "spark-operator-module-controller.Dockerfile"
+      - "Makefile.spark-operator-module.mk"
+      - "Makefile"
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  precommit-check-som:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout source code
+        uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+
+      - name: Merge target branch
+        if: github.event_name == 'pull_request'
+        env:
+          BASE_REF: ${{ github.event.pull_request.base.ref }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git fetch --unshallow origin || true
+          git fetch origin "$BASE_REF"
+          git merge --no-edit origin/"$BASE_REF"
+
+      - name: Setup Go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: spark-operator-module/go.mod
+
+      - name: Install dependencies
+        run: cd spark-operator-module && go mod download
+
+      - name: Check
+        run: make check-som

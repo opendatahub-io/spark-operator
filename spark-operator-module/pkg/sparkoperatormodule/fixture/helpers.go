@@ -41,6 +41,7 @@ func CreateReadyDeployment(ctx context.Context, cli client.Client, name, namespa
 	dep := ReadyDeployment(name, namespace)
 	gomega.Expect(client.IgnoreAlreadyExists(cli.Create(ctx, dep))).To(gomega.Succeed())
 	gomega.Expect(cli.Get(ctx, client.ObjectKeyFromObject(dep), dep)).To(gomega.Succeed())
+	dep.Status.ObservedGeneration = dep.Generation
 	dep.Status.AvailableReplicas = 1
 	dep.Status.UpdatedReplicas = 1
 	dep.Status.Replicas = 1
