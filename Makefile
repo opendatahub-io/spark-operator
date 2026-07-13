@@ -174,9 +174,9 @@ unit-test: setup-envtest ## Run unit tests.
 	@echo "Coverage report available at cover.html"
 
 .PHONY: e2e-test
-e2e-test: envtest ## Run the e2e tests against a Kind k8s instance that is spun up.
-	@echo "Running e2e tests (deploy_method=$(DEPLOY_METHOD))..."
-	DEPLOY_METHOD=$(DEPLOY_METHOD) IMAGE_TAG=$(IMAGE_TAG) go test ./test/e2e/ -v -ginkgo.v -timeout 30m
+e2e-test: envtest ## Run the e2e tests. DEPLOY_METHOD: helm (default) or kustomize. PREINSTALLED=true to skip install.
+	@echo "Running e2e tests (deploy_method=$(DEPLOY_METHOD), preinstalled=$(PREINSTALLED))..."
+	DEPLOY_METHOD=$(DEPLOY_METHOD) PREINSTALLED=$(PREINSTALLED) IMAGE_TAG=$(IMAGE_TAG) go test ./test/e2e/ -v -ginkgo.v -timeout 30m
 
 ##@ Kustomize
 

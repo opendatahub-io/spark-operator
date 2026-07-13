@@ -71,8 +71,12 @@ var (
 	k8sClient client.Client
 	clientset *kubernetes.Clientset
 
-	// deployMethod is read from DEPLOY_METHOD env var; defaults to "helm".
-	deployMethod          string
+	// deployMethod determines webhook names; read from DEPLOY_METHOD env var.
+	// Supported values: "helm" (default), "kustomize"
+	deployMethod string
+	// preinstalled skips operator install/uninstall; read from PREINSTALLED env var.
+	// Set to "true" to skip operator lifecycle management.
+	preinstalled          bool
 	mutatingWebhookName   string
 	validatingWebhookName string
 )
@@ -90,7 +94,10 @@ var _ = BeforeSuite(func() {
 	if deployMethod == "" {
 		deployMethod = "helm"
 	}
-	GinkgoWriter.Printf("Deploy method: %s\n", deployMethod)
+
+	preinstalled = strings.ToLower(os.Getenv("PREINSTALLED")) == "true"
+
+	GinkgoWriter.Printf("Deploy method: %s, Preinstalled: %v\n", deployMethod, preinstalled)
 
 	switch deployMethod {
 	case "helm":
@@ -136,11 +143,15 @@ var _ = BeforeSuite(func() {
 	Expect(err).NotTo(HaveOccurred())
 	Expect(clientset).NotTo(BeNil())
 
-	switch deployMethod {
-	case "helm":
-		installViaHelm()
-	case "kustomize":
-		installViaKustomize()
+	if !preinstalled {
+		switch deployMethod {
+		case "helm":
+			installViaHelm()
+		case "kustomize":
+			installViaKustomize()
+		}
+	} else {
+		logf.Log.Info("Operator is preinstalled, skipping installation")
 	}
 
 	By("Waiting for the webhooks to be ready")
@@ -153,11 +164,15 @@ var _ = BeforeSuite(func() {
 })
 
 var _ = AfterSuite(func() {
-	switch deployMethod {
-	case "helm":
-		uninstallViaHelm()
-	case "kustomize":
-		uninstallViaKustomize()
+	if !preinstalled {
+		switch deployMethod {
+		case "helm":
+			uninstallViaHelm()
+		case "kustomize":
+			uninstallViaKustomize()
+		}
+	} else {
+		logf.Log.Info("Operator was preinstalled, skipping uninstallation")
 	}
 
 	By("Tearing down the test environment")
