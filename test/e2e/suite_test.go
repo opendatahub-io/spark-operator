@@ -95,14 +95,13 @@ var _ = BeforeSuite(func() {
 		deployMethod = "helm"
 	}
 
-	preinstalledStr := strings.ToLower(os.Getenv("PREINSTALLED"))
-	if preinstalledStr == "" {
+	preinstalledStr := strings.ToLower(strings.TrimSpace(os.Getenv("PREINSTALLED")))
+	switch preinstalledStr {
+	case "", "false":
 		preinstalled = false
-	} else if preinstalledStr == "true" {
+	case "true":
 		preinstalled = true
-	} else if preinstalledStr == "false" {
-		preinstalled = false
-	} else {
+	default:
 		Fail(fmt.Sprintf("invalid PREINSTALLED value: %q (must be '', 'true', or 'false')", preinstalledStr))
 	}
 
