@@ -66,7 +66,7 @@ DEPLOY_METHOD=kustomize PREINSTALLED=true make e2e-test
 ### BeforeSuite Behavior
 
 **helm/kustomize modes** (manage lifecycle):
-```
+```text
 BeforeSuite:
   1. Create namespace
   2. Install operator (helm or kustomize)
@@ -78,7 +78,7 @@ AfterSuite:
 ```
 
 **preinstalled mode** (use existing):
-```
+```text
 BeforeSuite:
   1. Skip installation
   2. Wait for webhooks ready (assumes operator running)
@@ -89,13 +89,12 @@ AfterSuite:
 
 ### Webhook Configuration
 
-The test suite automatically detects webhook names based on install method:
+The test suite automatically detects webhook names based on deploy method:
 
-| Install Method | Mutating Webhook | Validating Webhook |
+| Deploy Method | Mutating Webhook | Validating Webhook |
 |----------------|------------------|-------------------|
 | `helm` | `spark-operator-webhook` | `spark-operator-webhook` |
 | `kustomize` | `mutating-webhook-configuration` | `validating-webhook-configuration` |
-| `preinstalled` | `mutating-webhook-configuration` | `validating-webhook-configuration` |
 
 ## RHOAI/OpenShift Example
 
@@ -119,6 +118,8 @@ DEPLOY_METHOD=kustomize PREINSTALLED=true go test ./test/e2e/... -v -ginkgo.v
 DEPLOY_METHOD=kustomize PREINSTALLED=true make e2e-test
 ```
 
+**Note on Spark RBAC**: Tests automatically detect RHOAI and extract Spark job RBAC from `redhat-ods-applications` namespace (matching the documented customer workflow). On plain Kubernetes, RBAC is applied from `config/spark-rbac/`.
+
 ### Cleanup
 ```bash
 # Operator stays running after tests (not deleted)
@@ -134,7 +135,11 @@ kubectl delete -k config/overlays/rhoai
 # One-time setup
 make kind-create-cluster
 make kind-load-image IMAGE_TAG=dev
-DEPLOY_METHOD=kustomize IMAGE_TAG=dev make e2e-test  # Installs operator
+
+# Install operator once (independently from tests)
+kubectl apply -k config/default --server-side --force-conflicts
+kubectl wait --for=condition=Available -n spark-operator \
+  deployment/spark-operator-controller --timeout=5m
 
 # Now iterate on test code (operator stays running)
 DEPLOY_METHOD=kustomize PREINSTALLED=true make e2e-test  # Fast!
@@ -142,6 +147,9 @@ DEPLOY_METHOD=kustomize PREINSTALLED=true make e2e-test  # Fast!
 DEPLOY_METHOD=kustomize PREINSTALLED=true make e2e-test  # Fast!
 # ... edit test code ...
 DEPLOY_METHOD=kustomize PREINSTALLED=true make e2e-test  # Fast!
+
+# Cleanup when done
+kubectl delete -k config/default
 ```
 
 **Speed comparison**:
@@ -176,7 +184,7 @@ DEPLOY_METHOD=kustomize PREINSTALLED=true make e2e-test  # Skip install, use kus
 #### Option 1: Test-Managed Operator
 ```yaml
 - name: Run e2e tests (helm)
-  run: INSTALL_METHOD=helm IMAGE_TAG=local make e2e-test
+  run: DEPLOY_METHOD=helm IMAGE_TAG=local make e2e-test
 ```
 
 #### Option 2: Separate Install + Test
@@ -190,7 +198,7 @@ DEPLOY_METHOD=kustomize PREINSTALLED=true make e2e-test  # Skip install, use kus
       -n redhat-ods-applications deployment/spark-operator-controller
 
 - name: Run e2e tests (preinstalled)
-  run: INSTALL_METHOD=preinstalled make e2e-test
+  run: DEPLOY_METHOD=kustomize PREINSTALLED=true make e2e-test
 
 - name: Cleanup
   run: kubectl delete -k config/overlays/rhoai
@@ -214,12 +222,12 @@ kubectl get validatingwebhookconfigurations
 
 **Error**: `namespace already exists` or `resource already exists`
 
-**Cause**: `INSTALL_METHOD` not set correctly
+**Cause**: `PREINSTALLED` not set correctly
 
 **Solution**: Ensure environment variable is set:
 ```bash
-echo $INSTALL_METHOD  # Should show "preinstalled"
-INSTALL_METHOD=preinstalled make e2e-test  # Explicit
+echo $PREINSTALLED  # Should show "true"
+DEPLOY_METHOD=kustomize PREINSTALLED=true make e2e-test  # Explicit
 ```
 
 ### Operator not found in expected namespace

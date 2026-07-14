@@ -176,7 +176,10 @@ unit-test: setup-envtest ## Run unit tests.
 .PHONY: e2e-test
 e2e-test: envtest ## Run the e2e tests. DEPLOY_METHOD: helm (default) or kustomize. PREINSTALLED=true to skip install.
 	@echo "Running e2e tests (deploy_method=$(DEPLOY_METHOD), preinstalled=$(PREINSTALLED))..."
-	DEPLOY_METHOD=$(DEPLOY_METHOD) PREINSTALLED=$(PREINSTALLED) IMAGE_TAG=$(IMAGE_TAG) go test ./test/e2e/ -v -ginkgo.v -timeout 30m
+	export DEPLOY_METHOD="$(DEPLOY_METHOD)" && \
+	export PREINSTALLED="$(PREINSTALLED)" && \
+	export IMAGE_TAG="$(IMAGE_TAG)" && \
+	go test ./test/e2e/ -v -ginkgo.v -timeout 30m
 
 ##@ Kustomize
 

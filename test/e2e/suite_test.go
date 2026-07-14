@@ -95,7 +95,16 @@ var _ = BeforeSuite(func() {
 		deployMethod = "helm"
 	}
 
-	preinstalled = strings.ToLower(os.Getenv("PREINSTALLED")) == "true"
+	preinstalledStr := strings.ToLower(os.Getenv("PREINSTALLED"))
+	if preinstalledStr == "" {
+		preinstalled = false
+	} else if preinstalledStr == "true" {
+		preinstalled = true
+	} else if preinstalledStr == "false" {
+		preinstalled = false
+	} else {
+		Fail(fmt.Sprintf("invalid PREINSTALLED value: %q (must be '', 'true', or 'false')", preinstalledStr))
+	}
 
 	GinkgoWriter.Printf("Deploy method: %s, Preinstalled: %v\n", deployMethod, preinstalled)
 
@@ -152,6 +161,15 @@ var _ = BeforeSuite(func() {
 		}
 	} else {
 		logf.Log.Info("Operator is preinstalled, skipping installation")
+
+		// Apply Spark job RBAC even in preinstalled mode (tests need it)
+		By("Applying Spark job RBAC to default namespace (preinstalled mode)")
+		repoRoot := filepath.Join("..", "..")
+		sparkRBACDir := filepath.Join(repoRoot, "config", "spark-rbac")
+		rbacCmd := exec.Command("kubectl", "apply", "-k", sparkRBACDir, "-n", "default", "--server-side", "--force-conflicts")
+		rbacCmd.Stdout = GinkgoWriter
+		rbacCmd.Stderr = GinkgoWriter
+		Expect(rbacCmd.Run()).NotTo(HaveOccurred(), "Failed to apply Spark job RBAC")
 	}
 
 	By("Waiting for the webhooks to be ready")
