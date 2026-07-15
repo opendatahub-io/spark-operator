@@ -1,0 +1,120 @@
+operator:
+  name: spark-operator
+  namespace: redhat-ods-applications
+  repository: https://github.com/opendatahub-io/spark-operator
+
+components:
+  - name: spark-operator-controller
+    controller: SparkApplicationReconciler
+    managedResources:
+      - apiVersion: apps/v1
+        kind: Deployment
+        name: spark-operator-controller
+        namespace: redhat-ods-applications
+        labels:
+          app.kubernetes.io/name: spark-operator
+          app.kubernetes.io/component: controller
+          control-plane: controller-manager
+        expectedSpec:
+          replicas: 1
+      - apiVersion: v1
+        kind: ServiceAccount
+        name: spark-operator-controller
+        namespace: redhat-ods-applications
+      - apiVersion: rbac.authorization.k8s.io/v1
+        kind: ClusterRole
+        name: spark-operator-controller
+      - apiVersion: rbac.authorization.k8s.io/v1
+        kind: ClusterRoleBinding
+        name: spark-operator-controller
+      - apiVersion: rbac.authorization.k8s.io/v1
+        kind: Role
+        name: spark-operator-controller
+        namespace: redhat-ods-applications
+      - apiVersion: rbac.authorization.k8s.io/v1
+        kind: RoleBinding
+        name: spark-operator-controller
+        namespace: redhat-ods-applications
+      - apiVersion: coordination.k8s.io/v1
+        kind: Lease
+        name: spark-operator-controller-lock
+        namespace: redhat-ods-applications
+      - apiVersion: rbac.authorization.k8s.io/v1
+        kind: ClusterRole
+        name: spark-operator-sparkapplication-editor-role
+      - apiVersion: rbac.authorization.k8s.io/v1
+        kind: ClusterRole
+        name: spark-operator-sparkapplication-viewer-role
+      - apiVersion: rbac.authorization.k8s.io/v1
+        kind: ClusterRole
+        name: spark-operator-scheduledsparkapplication-editor-role
+      - apiVersion: rbac.authorization.k8s.io/v1
+        kind: ClusterRole
+        name: spark-operator-scheduledsparkapplication-viewer-role
+    steadyState:
+      checks:
+        - type: conditionTrue
+          apiVersion: apps/v1
+          kind: Deployment
+          name: spark-operator-controller
+          namespace: redhat-ods-applications
+          conditionType: Available
+      timeout: "120s"
+
+  - name: spark-operator-webhook
+    controller: WebhookReconciler
+    managedResources:
+      - apiVersion: apps/v1
+        kind: Deployment
+        name: spark-operator-webhook
+        namespace: redhat-ods-applications
+        labels:
+          app.kubernetes.io/name: spark-operator
+          app.kubernetes.io/component: webhook
+        expectedSpec:
+          replicas: 1
+      - apiVersion: v1
+        kind: ServiceAccount
+        name: spark-operator-webhook
+        namespace: redhat-ods-applications
+      - apiVersion: rbac.authorization.k8s.io/v1
+        kind: ClusterRole
+        name: spark-operator-webhook
+      - apiVersion: rbac.authorization.k8s.io/v1
+        kind: ClusterRoleBinding
+        name: spark-operator-webhook
+      - apiVersion: rbac.authorization.k8s.io/v1
+        kind: Role
+        name: spark-operator-webhook
+        namespace: redhat-ods-applications
+      - apiVersion: rbac.authorization.k8s.io/v1
+        kind: RoleBinding
+        name: spark-operator-webhook
+        namespace: redhat-ods-applications
+      - apiVersion: v1
+        kind: Service
+        name: spark-operator-webhook-svc
+        namespace: redhat-ods-applications
+      - apiVersion: admissionregistration.k8s.io/v1
+        kind: MutatingWebhookConfiguration
+        name: spark-operator-webhook
+      - apiVersion: admissionregistration.k8s.io/v1
+        kind: ValidatingWebhookConfiguration
+        name: spark-operator-webhook
+      - apiVersion: coordination.k8s.io/v1
+        kind: Lease
+        name: spark-operator-webhook-lock
+        namespace: redhat-ods-applications
+    steadyState:
+      checks:
+        - type: conditionTrue
+          apiVersion: apps/v1
+          kind: Deployment
+          name: spark-operator-webhook
+          namespace: redhat-ods-applications
+          conditionType: Available
+      timeout: "120s"
+
+recovery:
+  reconcileTimeout: "300s"
+  maxReconcileCycles: 10

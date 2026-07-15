@@ -6,7 +6,7 @@ ENGINE ?= $(CONTAINER_TOOL)
 .PHONY: docker-build-spark-operator-module docker-push-spark-operator-module deploy-spark-operator-module \
 	kustomize-build-spark-operator-module generate-spark-operator-module manifests-spark-operator-module \
 	test-spark-operator-module setup-envtest-spark-operator-module precommit-som \
-	check-som
+	check-som e2e-test-spark-operator-module
 
 docker-build-spark-operator-module:
 	${ENGINE} buildx build ${ARCH} --load \
@@ -17,12 +17,13 @@ docker-push-spark-operator-module: docker-build-spark-operator-module
 	${ENGINE} push ${KO_DOCKER_REPO}/${SPARK_OPERATOR_MODULE_IMG}:${TAG}
 
 kustomize-build-spark-operator-module:
-	$(KUSTOMIZE) build spark-operator-module/config/default
+	kubectl kustomize spark-operator-module/config/default
 
 deploy-spark-operator-module:
-	cd spark-operator-module/config/default && $(KUSTOMIZE) edit set image \
-		spark-operator-module-controller=${KO_DOCKER_REPO}/${SPARK_OPERATOR_MODULE_IMG}:${TAG}
-	$(KUSTOMIZE) build spark-operator-module/config/default | kubectl apply --server-side=true -f -
+	cd spark-operator-module/config/default && \
+		sed -i 's|newName: .*|newName: ${KO_DOCKER_REPO}/${SPARK_OPERATOR_MODULE_IMG}|' kustomization.yaml && \
+		sed -i 's|newTag: .*|newTag: ${TAG}|' kustomization.yaml
+	kubectl apply -k spark-operator-module/config/default --server-side=true
 
 generate-spark-operator-module: controller-gen
 	@$(CONTROLLER_GEN) object paths=./spark-operator-module/pkg/apis/v1alpha1/...
@@ -38,13 +39,19 @@ manifests-spark-operator-module: controller-gen
 test-spark-operator-module: envtest
 	cd spark-operator-module && \
 	KUBEBUILDER_ASSETS="$$($(ENVTEST) use $(ENVTEST_K8S_VERSION) --bin-dir $(LOCALBIN) -p path)" \
-	go test ./... -count=1
+	go test $$(go list ./... | grep -v /e2e) -count=1
 
 setup-envtest-spark-operator-module: envtest
 	@$(ENVTEST) use $(ENVTEST_K8S_VERSION) --bin-dir $(LOCALBIN) -p path
 
 precommit-som: generate-spark-operator-module manifests-spark-operator-module test-spark-operator-module
 	cd spark-operator-module && go mod tidy && go vet ./... && go build ./...
+
+e2e-test-spark-operator-module: docker-build-spark-operator-module
+	kind load docker-image ${KO_DOCKER_REPO}/${SPARK_OPERATOR_MODULE_IMG}:${TAG} --name ${KIND_CLUSTER_NAME}
+	cd spark-operator-module && \
+	MODULE_IMAGE=${KO_DOCKER_REPO}/${SPARK_OPERATOR_MODULE_IMG}:${TAG} \
+	go test ./tests/e2e/ -v -timeout 10m -count=1
 
 check-som: precommit-som
 	@if [ -n "$$(git status -s spark-operator-module/ spark-operator-module-controller.Dockerfile Makefile.spark-operator-module.mk .github/workflows/spark-operator-module-ci.yaml)" ]; then \

@@ -29,18 +29,19 @@ import (
 // +kubebuilder:rbac:groups=components.platform.opendatahub.io,resources=sparkoperators/finalizers,resourceNames=default-sparkoperator,verbs=update
 // +kubebuilder:rbac:groups="",resources=configmaps;services;serviceaccounts,verbs=create;delete;get;list;patch;update;watch
 // +kubebuilder:rbac:groups="",resources=namespaces,verbs=get;list;watch
-// +kubebuilder:rbac:groups="",resources=events,verbs=create;patch
+// +kubebuilder:rbac:groups="",resources=events,verbs=create;patch;update
 // +kubebuilder:rbac:groups=apps,resources=deployments,verbs=create;delete;get;list;patch;update;watch
 // +kubebuilder:rbac:groups=coordination.k8s.io,resources=leases,verbs=create;delete;get;list;patch;update;watch
 // +kubebuilder:rbac:groups=networking.k8s.io,resources=networkpolicies,verbs=create;delete;get;list;patch;watch
 // +kubebuilder:rbac:groups=rbac.authorization.k8s.io,resources=roles;rolebindings;clusterroles;clusterrolebindings,verbs=create;delete;get;list;patch;update;watch
 // +kubebuilder:rbac:groups=rbac.authorization.k8s.io,resources=roles/finalizers;rolebindings/finalizers;clusterroles/finalizers;clusterrolebindings/finalizers,verbs=update
 // +kubebuilder:rbac:groups=apiextensions.k8s.io,resources=customresourcedefinitions,verbs=create;get;list;patch;update;watch
-// +kubebuilder:rbac:groups=admissionregistration.k8s.io,resources=mutatingwebhookconfigurations;validatingwebhookconfigurations,verbs=create;delete;get;list;patch;update;watch,resourceNames=spark-operator-webhook
+// +kubebuilder:rbac:groups=admissionregistration.k8s.io,resources=mutatingwebhookconfigurations;validatingwebhookconfigurations,verbs=list;watch
+// +kubebuilder:rbac:groups=admissionregistration.k8s.io,resources=mutatingwebhookconfigurations;validatingwebhookconfigurations,verbs=create;delete;get;patch;update,resourceNames=spark-operator-webhook;mutating-webhook-configuration;validating-webhook-configuration
 // +kubebuilder:rbac:groups=monitoring.coreos.com,resources=podmonitors,verbs=create;delete;get;list;patch;update;watch
 // +kubebuilder:rbac:groups=cert-manager.io,resources=certificates;issuers,verbs=create;delete;get;list;patch;update;watch
-// +kubebuilder:rbac:groups=rbac.authorization.k8s.io,resources=clusterroles,verbs=bind;escalate,resourceNames=spark-operator-controller;spark-operator-webhook;spark-application;spark-operator-manager-role;spark-operator-proxy-role
-// +kubebuilder:rbac:groups=rbac.authorization.k8s.io,resources=roles,verbs=bind;escalate,resourceNames=spark-operator-leader-election-role;leader-election-role
+// +kubebuilder:rbac:groups=rbac.authorization.k8s.io,resources=clusterroles,verbs=bind;escalate,resourceNames=spark-operator-controller;spark-operator-webhook;spark-application;spark-operator-manager-role;spark-operator-proxy-role;spark-operator-sparkapplication-editor-role;spark-operator-sparkapplication-viewer-role;spark-operator-scheduledsparkapplication-editor-role;spark-operator-scheduledsparkapplication-viewer-role
+// +kubebuilder:rbac:groups=rbac.authorization.k8s.io,resources=roles,verbs=bind;escalate,resourceNames=spark-operator-leader-election-role;leader-election-role;spark-operator-webhook;spark-role;spark-operator-controller
 
 type SparkOperatorModuleReconciler struct {
 	client.Client

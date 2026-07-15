@@ -167,7 +167,7 @@ go-lint-fix: golangci-lint ## Run golangci-lint linter and perform fixes.
 .PHONY: unit-test
 unit-test: setup-envtest ## Run unit tests.
 	@echo "Running unit tests..."
-	KUBEBUILDER_ASSETS="$(shell $(ENVTEST) use $(ENVTEST_K8S_VERSION) --bin-dir $(LOCALBIN) -p path)"
+	KUBEBUILDER_ASSETS="$(shell $(ENVTEST) use $(ENVTEST_K8S_VERSION) --bin-dir $(LOCALBIN) -p path)" \
 	go test $(shell go list ./... | grep -v -e /e2e -e /drift) -coverprofile cover.out
 	@echo "Generating HTML coverage report..."
 	go tool cover -html=cover.out -o cover.html
