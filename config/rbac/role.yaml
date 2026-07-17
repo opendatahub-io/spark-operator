@@ -71,6 +71,14 @@ rules:
   - get
   - update
 - apiGroups:
+  - networking.k8s.io
+  resources:
+  - networkpolicies
+  verbs:
+  - create
+  - delete
+  - update
+- apiGroups:
   - sparkoperator.k8s.io
   resources:
   - scheduledsparkapplications
