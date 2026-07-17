@@ -363,6 +363,97 @@ tests:
             verbs:
               - watch
 
+  - it: Should grant networkpolicies only create/delete/update in ClusterRole
+    set:
+      spark:
+        jobNamespaces:
+          - ""
+    documentIndex: 0
+    asserts:
+      - contains:
+          path: rules
+          content:
+            apiGroups:
+              - networking.k8s.io
+            resources:
+              - networkpolicies
+            verbs:
+              - create
+              - delete
+              - update
+
+  - it: Should scope networkpolicies to networking.k8s.io only, not extensions
+    set:
+      spark:
+        jobNamespaces:
+          - ""
+    documentIndex: 0
+    asserts:
+      - notContains:
+          path: rules
+          content:
+            apiGroups:
+              - extensions
+              - networking.k8s.io
+            resources:
+              - networkpolicies
+
+  - it: Should include networkpolicies in per-namespace Role
+    set:
+      spark:
+        jobNamespaces:
+          - default
+          - spark
+    documentIndex: 4
+    asserts:
+      - contains:
+          path: rules
+          content:
+            apiGroups:
+              - networking.k8s.io
+            resources:
+              - networkpolicies
+            verbs:
+              - create
+              - delete
+              - update
+
+  - it: Should not grant get/list/watch/patch on networkpolicies
+    set:
+      spark:
+        jobNamespaces:
+          - ""
+    documentIndex: 0
+    asserts:
+      - notContains:
+          path: rules
+          content:
+            resources:
+              - networkpolicies
+            verbs:
+              - get
+      - notContains:
+          path: rules
+          content:
+            resources:
+              - networkpolicies
+            verbs:
+              - list
+      - notContains:
+          path: rules
+          content:
+            resources:
+              - networkpolicies
+            verbs:
+              - watch
+      - notContains:
+          path: rules
+          content:
+            resources:
+              - networkpolicies
+            verbs:
+              - patch
+
   - it: Should grant sparkapplications only get/list/watch/create/delete in ClusterRole
     set:
       spark:
