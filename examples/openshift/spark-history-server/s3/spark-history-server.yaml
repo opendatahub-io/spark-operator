@@ -1,0 +1,111 @@
+# Spark History Server Deployment with S3-Compatible Storage
+#
+# IMPORTANT: This configuration uses SimpleAWSCredentialsProvider which automatically
+# reads S3 credentials from environment variables (AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY).
+# These env var names are the standard for all S3-compatible providers.
+#
+# Do NOT add -Dspark.hadoop.fs.s3a.access.key or -Dspark.hadoop.fs.s3a.secret.key to
+# SPARK_HISTORY_OPTS as this will cause conflicts and authentication failures.
+#
+# Before applying:
+# 1. Update YOUR_BUCKET_NAME in SPARK_HISTORY_OPTS
+# 2. Update YOUR_USERNAME in the image reference (or use an existing S3-enabled Spark image)
+# 3. Create spark-s3-credentials secret with your S3 access credentials
+# 4. Ensure the Spark image includes hadoop-aws and aws-sdk JARs for S3A support
+#
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: spark-history-server
+  namespace: spark-test
+  labels:
+    app: spark-history-server
+spec:
+  selector:
+    matchLabels:
+      app: spark-history-server
+  template:
+    metadata:
+      labels:
+        app: spark-history-server
+    spec:
+      serviceAccountName: spark-operator-spark
+      containers:
+      - name: spark-history-server
+        image: quay.io/YOUR_USERNAME/spark-s3:4.0.1
+        imagePullPolicy: Always
+        command: ["/opt/spark/sbin/start-history-server.sh"]
+        env:
+        - name: AWS_ACCESS_KEY_ID
+          valueFrom:
+            secretKeyRef:
+              name: spark-s3-credentials
+              key: AWS_ACCESS_KEY_ID
+        - name: AWS_SECRET_ACCESS_KEY
+          valueFrom:
+            secretKeyRef:
+              name: spark-s3-credentials
+              key: AWS_SECRET_ACCESS_KEY
+        - name: AWS_REGION
+          value: us-east-2
+        - name: SPARK_NO_DAEMONIZE
+          value: "true"
+        - name: SPARK_HISTORY_OPTS
+          value: >-
+            -Dspark.history.fs.logDirectory=s3a://YOUR_BUCKET_NAME/spark-event-logs/
+            -Dspark.hadoop.fs.s3a.impl=org.apache.hadoop.fs.s3a.S3AFileSystem
+            -Dspark.hadoop.fs.s3a.aws.credentials.provider=org.apache.hadoop.fs.s3a.SimpleAWSCredentialsProvider
+            -Dspark.history.fs.update.interval=10s
+            -Dspark.history.retainedApplications=50
+            -Dspark.history.ui.maxApplications=100
+        ports:
+        - containerPort: 18080
+          name: http
+        resources:
+          requests:
+            memory: "1Gi"
+            cpu: "500m"
+          limits:
+            memory: "2Gi"
+            cpu: "1000m"
+        livenessProbe:
+          httpGet:
+            path: /
+            port: 18080
+          initialDelaySeconds: 30
+          periodSeconds: 10
+        readinessProbe:
+          httpGet:
+            path: /
+            port: 18080
+          initialDelaySeconds: 20
+          periodSeconds: 5
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: spark-history-server
+  namespace: spark-test
+spec:
+  selector:
+    app: spark-history-server
+  ports:
+  - port: 18080
+    targetPort: 18080
+---
+apiVersion: route.openshift.io/v1
+kind: Route
+metadata:
+  name: spark-history-server
+  namespace: spark-test
+  labels:
+    app: spark-history-server
+spec:
+  port:
+    targetPort: 18080
+  to:
+    kind: Service
+    name: spark-history-server
+  tls:
+    termination: edge
+    insecureEdgeTerminationPolicy: Redirect

@@ -1,0 +1,52 @@
+# Dockerfile for Spark with S3-compatible storage support
+# Based on official Spark image with added S3A dependencies
+FROM apache/spark:4.0.1
+
+LABEL maintainer="your-name"
+LABEL version="4.0.1-s3"
+LABEL description="Spark 4.0.1 with S3-compatible storage support (hadoop-aws + aws-sdk)"
+
+# Set the working directory
+WORKDIR /opt/spark
+
+# --- Add S3-compatible storage dependencies ---
+# Download Hadoop AWS and AWS SDK JARs compatible with Spark 4.0.1
+USER root
+
+# Hadoop AWS libraries for S3A FileSystem support
+# Use Hadoop 3.4.0 (already in base) with AWS SDK v2 2.25+ (has crossRegionAccessEnabled method)
+RUN cd /opt/spark/jars && \
+    curl -sL https://repo1.maven.org/maven2/org/apache/hadoop/hadoop-aws/3.4.0/hadoop-aws-3.4.0.jar -o hadoop-aws-3.4.0.jar && \
+    curl -sL https://repo1.maven.org/maven2/software/amazon/awssdk/bundle/2.25.16/bundle-2.25.16.jar -o aws-sdk-java-bundle-2.25.16.jar && \
+    curl -sL https://repo1.maven.org/maven2/software/amazon/awssdk/url-connection-client/2.25.16/url-connection-client-2.25.16.jar -o aws-url-connection-client-2.25.16.jar && \
+    chgrp 0 hadoop-aws-3.4.0.jar aws-sdk-java-bundle-2.25.16.jar aws-url-connection-client-2.25.16.jar && \
+    chmod 664 hadoop-aws-3.4.0.jar aws-sdk-java-bundle-2.25.16.jar aws-url-connection-client-2.25.16.jar
+
+# --- OpenShift Arbitrary UID Compatibility ---
+# OpenShift assigns arbitrary non-root UID at runtime, but it's always a member of GID 0
+# All directories must be owned by group 0 and group-writable (g=u)
+
+# Set Spark directories to be owned by group 0 and group-writable
+# Required for: reading jars, writing to work-dir/logs
+RUN chgrp -R 0 /opt/spark && \
+    chmod -R g=u /opt/spark && \
+    mkdir -p /opt/spark/work-dir /opt/spark/logs && \
+    chgrp -R 0 /opt/spark/work-dir /opt/spark/logs && \
+    chmod -R 775 /opt/spark/work-dir /opt/spark/logs
+
+# Ensure /tmp is writable
+RUN chmod 1777 /tmp
+
+# Set HOME for Spark temp files
+ENV HOME=/home/spark
+
+# Create HOME directory with proper permissions
+RUN mkdir -p /home/spark && \
+    chgrp -R 0 /home/spark && \
+    chmod -R g=u /home/spark && \
+    chmod -R 775 /home/spark
+
+# Verify JARs are present (optional - for debugging)
+RUN ls -lh /opt/spark/jars/hadoop-aws* /opt/spark/jars/aws-* || echo "S3 JARs not found!"
+
+# DO NOT set USER directive - OpenShift will assign arbitrary UID at runtime

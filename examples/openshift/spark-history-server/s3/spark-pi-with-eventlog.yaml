@@ -1,0 +1,64 @@
+apiVersion: sparkoperator.k8s.io/v1beta2
+kind: SparkApplication
+metadata:
+  name: spark-pi-eventlog
+  namespace: spark-test
+spec:
+  type: Scala
+  mode: cluster
+  image: quay.io/YOUR_USERNAME/spark-s3:4.0.1
+  imagePullPolicy: Always
+  mainClass: org.apache.spark.examples.SparkPi
+  mainApplicationFile: local:///opt/spark/examples/jars/spark-examples.jar
+  arguments:
+    - "1000"
+  sparkVersion: "4.0.1"
+
+  restartPolicy:
+    type: Never
+
+  sparkConf:
+    # Enable event logging
+    "spark.eventLog.enabled": "true"
+    "spark.eventLog.dir": "s3a://YOUR-BUCKET-NAME/spark-event-logs/"
+    "spark.eventLog.compress": "true"
+
+    # S3-compatible storage configuration
+    "spark.hadoop.fs.s3a.impl": "org.apache.hadoop.fs.s3a.S3AFileSystem"
+    "spark.hadoop.fs.s3a.aws.credentials.provider": "org.apache.hadoop.fs.s3a.SimpleAWSCredentialsProvider"
+
+  driver:
+    cores: 1
+    memory: "1000m"
+    serviceAccount: spark-operator-spark
+    env:
+    - name: AWS_ACCESS_KEY_ID
+      valueFrom:
+        secretKeyRef:
+          name: spark-s3-credentials
+          key: AWS_ACCESS_KEY_ID
+    - name: AWS_SECRET_ACCESS_KEY
+      valueFrom:
+        secretKeyRef:
+          name: spark-s3-credentials
+          key: AWS_SECRET_ACCESS_KEY
+    - name: AWS_REGION
+      value: us-east-2
+
+  executor:
+    cores: 1
+    instances: 2
+    memory: "1000m"
+    env:
+    - name: AWS_ACCESS_KEY_ID
+      valueFrom:
+        secretKeyRef:
+          name: spark-s3-credentials
+          key: AWS_ACCESS_KEY_ID
+    - name: AWS_SECRET_ACCESS_KEY
+      valueFrom:
+        secretKeyRef:
+          name: spark-s3-credentials
+          key: AWS_SECRET_ACCESS_KEY
+    - name: AWS_REGION
+      value: us-east-2

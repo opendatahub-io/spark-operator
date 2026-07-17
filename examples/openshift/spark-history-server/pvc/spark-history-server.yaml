@@ -1,0 +1,89 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: spark-history-server-pvc
+  namespace: spark-test
+  labels:
+    app: spark-history-server-pvc
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: spark-history-server-pvc
+  template:
+    metadata:
+      labels:
+        app: spark-history-server-pvc
+    spec:
+      serviceAccountName: spark-operator-spark
+      containers:
+      - name: spark-history-server
+        image: quay.io/opendatahub/spark:3.5.7
+        imagePullPolicy: Always
+        command: ["/opt/spark/sbin/start-history-server.sh"]
+        env:
+        - name: SPARK_NO_DAEMONIZE
+          value: "true"
+        - name: SPARK_HISTORY_OPTS
+          value: >-
+            -Dspark.history.fs.logDirectory=file:///mnt/spark-event-logs
+            -Dspark.history.ui.port=18080
+            -Dspark.history.fs.update.interval=10s
+        volumeMounts:
+        - name: event-logs
+          mountPath: /mnt/spark-event-logs
+        ports:
+        - containerPort: 18080
+          name: http
+        resources:
+          requests:
+            memory: "1Gi"
+            cpu: "500m"
+          limits:
+            memory: "2Gi"
+            cpu: "1000m"
+        livenessProbe:
+          httpGet:
+            path: /
+            port: 18080
+          initialDelaySeconds: 30
+          periodSeconds: 10
+        readinessProbe:
+          httpGet:
+            path: /
+            port: 18080
+          initialDelaySeconds: 20
+          periodSeconds: 5
+      volumes:
+      - name: event-logs
+        persistentVolumeClaim:
+          claimName: spark-event-logs-pvc
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: spark-history-server-pvc
+  namespace: spark-test
+spec:
+  selector:
+    app: spark-history-server-pvc
+  ports:
+  - port: 18080
+    targetPort: 18080
+---
+apiVersion: route.openshift.io/v1
+kind: Route
+metadata:
+  name: spark-history-server-pvc
+  namespace: spark-test
+  labels:
+    app: spark-history-server-pvc
+spec:
+  port:
+    targetPort: 18080
+  to:
+    kind: Service
+    name: spark-history-server-pvc
+  tls:
+    termination: edge
+    insecureEdgeTerminationPolicy: Redirect

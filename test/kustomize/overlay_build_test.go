@@ -209,6 +209,26 @@ func TestOverlayBuilds(t *testing.T) {
 				nps := overlayFindResources(resources, "NetworkPolicy")
 				assert.NotEmpty(t, nps, "overlay %s should include NetworkPolicy", overlay.name)
 			})
+
+			t.Run("ControllerClusterRoleNetworkPolicyRBAC", func(t *testing.T) {
+				crObj := overlayFindResource(resources, "ClusterRole", "spark-operator-controller")
+				require.NotNil(t, crObj, "ClusterRole/spark-operator-controller not found")
+				cr := overlayConvertTo[rbacv1.ClusterRole](t, crObj)
+				found := false
+				for _, rule := range cr.Rules {
+					for _, res := range rule.Resources {
+						if res == "networkpolicies" {
+							assert.Contains(t, rule.Verbs, "create")
+							assert.Contains(t, rule.Verbs, "delete")
+							assert.Contains(t, rule.Verbs, "update")
+							found = true
+						}
+					}
+				}
+				assert.True(t, found,
+					"ClusterRole/spark-operator-controller must include networkpolicies RBAC — "+
+						"if this fails after an upstream sync, the overlay patch may need updating")
+			})
 		})
 	}
 }
