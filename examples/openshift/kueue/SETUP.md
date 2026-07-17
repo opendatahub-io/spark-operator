@@ -112,10 +112,14 @@ Kueue's mutating webhook only intercepts resources in namespaces with this label
 oc label namespace spark-operator kueue.openshift.io/managed=true --overwrite
 ```
 
-## Step 6: Create RBAC for Spark Driver
+## Step 6: Verify Spark Driver RBAC
+
+The Spark driver RBAC (ServiceAccount, Role, RoleBinding) is automatically
+created when the operator is installed via `oc apply -k config/default/`.
+Verify it exists:
 
 ```bash
-oc apply -f examples/openshift/k8s/base/rbac.yaml
+oc get serviceaccount spark-operator-spark -n spark-operator
 ```
 
 ## Step 7: Submit a SparkApplication

@@ -87,13 +87,14 @@ See [helm uninstall](https://helm.sh/docs/helm/helm_uninstall) for command docum
 | hook.image.registry | string | `"ghcr.io"` | Image registry. |
 | hook.image.repository | string | `"kubeflow/spark-operator/kubectl"` | Image repository. |
 | hook.image.tag | string | If not set, the chart appVersion will be used. | Image tag. |
+| hook.resources | object | `{"limits":{"cpu":"100m","memory":"64Mi"},"requests":{"cpu":"100m","memory":"64Mi"}}` | Pod resource requests and limits for the Helm hook Job container. |
 | hook.nodeSelector | object | `{}` | Node selector for the Helm hook Job. |
 | hook.affinity | object | `{}` | Affinity for the Helm hook Job. |
 | hook.tolerations | list | `[]` | List of node taints to tolerate for the Helm hook Job. |
 | hook.labels | object | `{}` | Extra labels for the Helm hook Job pod. |
 | hook.annotations | object | `{}` | Extra annotations for the Helm hook Job pod. |
 | controller.replicas | int | `1` | Number of replicas of controller. |
-| controller.featureGates | list | `[{"enabled":false,"name":"PartialRestart"},{"enabled":false,"name":"LoadSparkDefaults"}]` | Feature gates to enable or disable specific features. |
+| controller.featureGates | list | `[{"enabled":false,"name":"PartialRestart"},{"enabled":false,"name":"LoadSparkDefaults"},{"enabled":false,"name":"RestSubmitter"}]` | Feature gates to enable or disable specific features. |
 | controller.revisionHistoryLimit | int | `10` | The number of old history to retain to allow rollback. |
 | controller.leaderElection.enable | bool | `true` | Specifies whether to enable leader election for controller. |
 | controller.leaderElection.leaseDuration | string | `"15s"` | Leader election lease duration. |
@@ -104,6 +105,7 @@ See [helm uninstall](https://helm.sh/docs/helm/helm_uninstall) for command docum
 | controller.logEncoder | string | `"console"` | Configure the encoder of logging, can be one of `console` or `json`. |
 | controller.driverPodCreationGracePeriod | string | `"10s"` | Grace period after a successful spark-submit when driver pod not found errors will be retried. Useful if the driver pod can take some time to be created. |
 | controller.maxTrackedExecutorPerApp | int | `1000` | Specifies the maximum number of Executor pods that can be tracked by the controller per SparkApplication. |
+| controller.driverPodDisruptionBudget | object | `{"enable":false}` | Driver PDB feature gate. When true, the controller creates a PodDisruptionBudget for each SparkApplication that sets spec.driverPodDisruptionBudget=true. Default false. |
 | controller.kubeAPIQPS | int | `20` | Maximum QPS to the API server from the controller client. |
 | controller.kubeAPIBurst | int | `30` | Maximum burst for throttle from the controller client. |
 | controller.scheduledSparkApplicationTimestampPrecision | string | `"nanos"` | Timestamp precision for ScheduledSparkApplication run names. Valid values: nanos (default), micros, millis, seconds, minutes. Shorter precisions produce shorter names which helps with Kubernetes name length limits. NOTE: Using lower precisions such as "seconds" or "minutes" increases the risk of name collisions if multiple runs are created within the same time unit (for example during reconciliation loops or manual re-triggers). A collision will cause run creation to fail. Choose a precision compatible with your scheduling frequency: "minutes" is only suitable for jobs scheduled at most once per minute, "seconds" for jobs scheduled at most once per second. |
@@ -124,6 +126,7 @@ See [helm uninstall](https://helm.sh/docs/helm/helm_uninstall) for command docum
 | controller.rbac.annotations | object | `{}` | Extra annotations for the controller RBAC resources. |
 | controller.labels | object | `{}` | Extra labels for controller pods. |
 | controller.annotations | object | `{}` | Extra annotations for controller pods. |
+| controller.deploymentAnnotations | object | `{}` | Annotations for the controller Deployment resource (metadata.annotations). |
 | controller.volumes | list | `[{"emptyDir":{"sizeLimit":"1Gi"},"name":"tmp"}]` | Volumes for controller pods. |
 | controller.nodeSelector | object | `{}` | Node selector for controller pods. |
 | controller.affinity | object | `{}` | Affinity for controller pods. |
@@ -147,6 +150,13 @@ See [helm uninstall](https://helm.sh/docs/helm/helm_uninstall) for command docum
 | controller.workqueueRateLimiter.bucketSize | int | `500` | Specifies the maximum number of items that can be in the workqueue at any given time. |
 | controller.workqueueRateLimiter.maxDelay.enable | bool | `true` | Specifies whether to enable max delay for the workqueue rate limiter. This is useful to avoid losing events when the workqueue is full. |
 | controller.workqueueRateLimiter.maxDelay.duration | string | `"6h"` | Specifies the maximum delay duration for the workqueue rate limiter. |
+| submitter.serviceUrl | string | `"http://spark-operator-submitter-svc:8080/api/v1/spark-submit"` | URL of the REST submitter service endpoint. |
+| submitter.requestTimeout | string | `"2m"` | HTTP request timeout per spark submission attempt. |
+| submitter.startupTimeout | string | `"5m"` | How long the controller waits for the submitter service to become reachable at startup. |
+| submitter.maxRetries | int | `3` | Max retry attempts for transient submission failures. |
+| submitter.initialBackoff | string | `"2s"` | Initial backoff duration before the first retry. Doubles on each subsequent attempt. |
+| submitter.startupProbe.periodSeconds | int | `5` | Seconds between probe attempts. |
+| submitter.startupProbe.failureThreshold | int | `60` | Number of failures before restart. (failureThreshold × periodSeconds) should >= startupTimeout. |
 | webhook.enable | bool | `true` | Specifies whether to enable webhook. |
 | webhook.replicas | int | `1` | Number of replicas of webhook server. |
 | webhook.revisionHistoryLimit | int | `10` | The number of old history to retain to allow rollback. |
@@ -168,6 +178,7 @@ See [helm uninstall](https://helm.sh/docs/helm/helm_uninstall) for command docum
 | webhook.rbac.annotations | object | `{}` | Extra annotations for the webhook RBAC resources. |
 | webhook.labels | object | `{}` | Extra labels for webhook pods. |
 | webhook.annotations | object | `{}` | Extra annotations for webhook pods. |
+| webhook.deploymentAnnotations | object | `{}` | Annotations for the webhook Deployment resource (metadata.annotations). |
 | webhook.sidecars | list | `[]` | Sidecar containers for webhook pods. |
 | webhook.volumes | list | `[{"emptyDir":{"sizeLimit":"500Mi"},"name":"serving-certs"}]` | Volumes for webhook pods. |
 | webhook.nodeSelector | object | `{}` | Node selector for webhook pods. |

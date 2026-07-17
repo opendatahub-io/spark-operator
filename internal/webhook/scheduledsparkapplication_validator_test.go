@@ -24,20 +24,11 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	"github.com/kubeflow/spark-operator/v2/api/v1beta2"
+	"github.com/kubeflow/spark-operator/v2/pkg/common"
 )
 
 func TestScheduledSparkApplicationValidatorValidateCreate(t *testing.T) {
 	validator := NewScheduledSparkApplicationValidator()
-
-	t.Run("returns nil for unrelated object types", func(t *testing.T) {
-		warnings, err := validator.ValidateCreate(context.Background(), &v1beta2.SparkApplication{})
-		if err != nil {
-			t.Fatalf("expected no error, got %v", err)
-		}
-		if len(warnings) != 0 {
-			t.Fatalf("expected no warnings, got %v", warnings)
-		}
-	})
 
 	t.Run("accepts ScheduledSparkApplication instances", func(t *testing.T) {
 		app := &v1beta2.ScheduledSparkApplication{
@@ -58,20 +49,6 @@ func TestScheduledSparkApplicationValidatorValidateCreate(t *testing.T) {
 
 func TestScheduledSparkApplicationValidatorValidateUpdate(t *testing.T) {
 	validator := NewScheduledSparkApplicationValidator()
-
-	t.Run("returns nil for unrelated object types", func(t *testing.T) {
-		warnings, err := validator.ValidateUpdate(
-			context.Background(),
-			&v1beta2.ScheduledSparkApplication{},
-			&v1beta2.SparkApplication{},
-		)
-		if err != nil {
-			t.Fatalf("expected no error, got %v", err)
-		}
-		if len(warnings) != 0 {
-			t.Fatalf("expected no warnings, got %v", warnings)
-		}
-	})
 
 	t.Run("accepts ScheduledSparkApplication instances", func(t *testing.T) {
 		oldApp := &v1beta2.ScheduledSparkApplication{
@@ -99,16 +76,6 @@ func TestScheduledSparkApplicationValidatorValidateUpdate(t *testing.T) {
 func TestScheduledSparkApplicationValidatorValidateDelete(t *testing.T) {
 	validator := NewScheduledSparkApplicationValidator()
 
-	t.Run("returns nil for unrelated object types", func(t *testing.T) {
-		warnings, err := validator.ValidateDelete(context.Background(), &v1beta2.SparkApplication{})
-		if err != nil {
-			t.Fatalf("expected no error, got %v", err)
-		}
-		if len(warnings) != 0 {
-			t.Fatalf("expected no warnings, got %v", warnings)
-		}
-	})
-
 	t.Run("accepts ScheduledSparkApplication instances", func(t *testing.T) {
 		warnings, err := validator.ValidateDelete(context.Background(), &v1beta2.ScheduledSparkApplication{})
 		if err != nil {
@@ -118,6 +85,46 @@ func TestScheduledSparkApplicationValidatorValidateDelete(t *testing.T) {
 			t.Fatalf("expected no warnings, got %v", warnings)
 		}
 	})
+}
+
+func newScheduledSparkApplication() *v1beta2.ScheduledSparkApplication {
+	return &v1beta2.ScheduledSparkApplication{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "test-scheduled-app",
+			Namespace: "default",
+		},
+		Spec: v1beta2.ScheduledSparkApplicationSpec{
+			Schedule: "@every 1h",
+			Template: newSparkApplication().Spec,
+		},
+	}
+}
+
+func TestScheduledSparkApplicationValidatorSparkConf_SecurityVectorsRejected(t *testing.T) {
+	validator := NewScheduledSparkApplicationValidator()
+
+	for _, tt := range sparkConfSecurityVectors {
+		t.Run(tt.name, func(t *testing.T) {
+			app := newScheduledSparkApplication()
+			app.Spec.Template.SparkConf = tt.sparkConf
+
+			if _, err := validator.ValidateCreate(context.Background(), app); err == nil {
+				t.Fatalf("expected sparkConf to be rejected, but it was allowed")
+			}
+		})
+	}
+}
+
+func TestScheduledSparkApplicationValidatorSparkConf_UpdateRejected(t *testing.T) {
+	validator := NewScheduledSparkApplicationValidator()
+
+	oldApp := newScheduledSparkApplication()
+	newApp := newScheduledSparkApplication()
+	newApp.Spec.Template.SparkConf = map[string]string{common.SparkMaster: "k8s://https://attacker-cluster:443"}
+
+	if _, err := validator.ValidateUpdate(context.Background(), oldApp, newApp); err == nil {
+		t.Fatalf("expected sparkConf to be rejected on update, but it was allowed")
+	}
 }
 
 func TestScheduledSparkApplicationValidatorValidateName(t *testing.T) {

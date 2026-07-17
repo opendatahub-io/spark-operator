@@ -18,7 +18,7 @@ set -o errexit
 set -o nounset
 set -o pipefail
 
-SCRIPT_ROOT=$(dirname "${BASH_SOURCE}")/..
+SCRIPT_ROOT=$(dirname "${BASH_SOURCE[0]}")/..
 
 _tmp="$(mktemp -d)"
 DIFF_ROOTS=("${SCRIPT_ROOT}/api" "${SCRIPT_ROOT}/pkg")
@@ -44,8 +44,7 @@ for root in "${DIFF_ROOTS[@]}"; do
   cp -a "${_tmp}/${rel}"/* "${root}"
 done
 
-if [[ $ret -eq 0 ]]
-then
+if [[ $ret -eq 0 ]]; then
   echo "codegen up to date."
 else
   echo "codegen is out of date. Please run hack/update-codegen.sh"

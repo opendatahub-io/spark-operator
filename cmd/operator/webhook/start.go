@@ -202,6 +202,7 @@ func start() {
 	mgr, err := ctrl.NewManager(cfg, ctrl.Options{
 		Scheme: operatorscheme.WebhookScheme,
 		Cache:  newCacheOptions(),
+		Client: client.Options{},
 		Metrics: metricsserver.Options{
 			BindAddress:   metricsBindAddress,
 			SecureServing: secureMetrics,
@@ -295,8 +296,7 @@ func start() {
 		}
 	}
 
-	if err := ctrl.NewWebhookManagedBy(mgr).
-		For(&v1alpha1.SparkConnect{}).
+	if err := ctrl.NewWebhookManagedBy(mgr, &v1alpha1.SparkConnect{}).
 		WithDefaulter(webhook.NewSparkConnectDefaulter()).
 		WithValidator(webhook.NewSparkConnectValidator()).
 		WithLogConstructor(webhook.LogConstructor).
@@ -305,8 +305,7 @@ func start() {
 		os.Exit(1)
 	}
 
-	if err := ctrl.NewWebhookManagedBy(mgr).
-		For(&v1beta2.SparkApplication{}).
+	if err := ctrl.NewWebhookManagedBy(mgr, &v1beta2.SparkApplication{}).
 		WithDefaulter(webhook.NewSparkApplicationDefaulter()).
 		WithValidator(webhook.NewSparkApplicationValidator(mgr.GetClient(), enableResourceQuotaEnforcement)).
 		WithLogConstructor(webhook.LogConstructor).
@@ -315,8 +314,7 @@ func start() {
 		os.Exit(1)
 	}
 
-	if err := ctrl.NewWebhookManagedBy(mgr).
-		For(&v1beta2.ScheduledSparkApplication{}).
+	if err := ctrl.NewWebhookManagedBy(mgr, &v1beta2.ScheduledSparkApplication{}).
 		WithDefaulter(webhook.NewScheduledSparkApplicationDefaulter()).
 		WithValidator(webhook.NewScheduledSparkApplicationValidator()).
 		WithLogConstructor(webhook.LogConstructor).
@@ -325,8 +323,7 @@ func start() {
 		os.Exit(1)
 	}
 
-	if err := ctrl.NewWebhookManagedBy(mgr).
-		For(&corev1.Pod{}).
+	if err := ctrl.NewWebhookManagedBy(mgr, &corev1.Pod{}).
 		WithDefaulter(webhook.NewSparkPodDefaulter(mgr.GetClient(), namespaces)).
 		WithLogConstructor(webhook.LogConstructor).
 		Complete(); err != nil {
@@ -522,6 +519,7 @@ func newCacheOptions() cache.Options {
 				common.LabelLaunchedBySparkOperator: "true",
 			}),
 		},
+		&corev1.ResourceQuota{}:              {},
 		&v1beta2.SparkApplication{}:          {},
 		&v1beta2.ScheduledSparkApplication{}: {},
 		&admissionregistrationv1.MutatingWebhookConfiguration{}: {
@@ -536,13 +534,10 @@ func newCacheOptions() cache.Options {
 		},
 	}
 
-	if enableResourceQuotaEnforcement {
-		byObject[&corev1.ResourceQuota{}] = cache.ByObject{}
-	}
-
 	options := cache.Options{
 		Scheme:            operatorscheme.WebhookScheme,
 		DefaultNamespaces: defaultNamespaces,
+		DefaultTransform:  cache.TransformStripManagedFields(),
 		ByObject:          byObject,
 	}
 

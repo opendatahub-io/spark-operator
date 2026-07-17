@@ -20,6 +20,10 @@ metadata:
   name: {{ include "spark-operator.controller.deploymentName" . }}
   labels:
     {{- include "spark-operator.controller.labels" . | nindent 4 }}
+  {{- with .Values.controller.deploymentAnnotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
 spec:
   replicas: {{ .Values.controller.replicas }}
   revisionHistoryLimit: {{ .Values.controller.revisionHistoryLimit }}
@@ -128,6 +132,9 @@ spec:
         {{- if .Values.controller.maxTrackedExecutorPerApp }}
         - --max-tracked-executor-per-app={{ .Values.controller.maxTrackedExecutorPerApp }}
         {{- end }}
+        {{- if .Values.controller.driverPodDisruptionBudget.enable }}
+        - --enable-driver-pdb=true
+        {{- end }}
         {{- if .Values.controller.kubeAPIQPS }}
         - --kube-api-qps={{ .Values.controller.kubeAPIQPS }}
         {{- end }}
@@ -139,6 +146,13 @@ spec:
         {{- end }}
         {{- if .Values.controller.featureGates }}
         - --feature-gates={{ range $index, $gate := .Values.controller.featureGates }}{{ if $index }},{{ end }}{{ $gate.name }}={{ $gate.enabled }}{{ end }}
+        {{- end }}
+        {{- if include "spark-operator.submitter.enabled" . }}
+        - --submitter-service-url={{ .Values.submitter.serviceUrl }}
+        - --submitter-request-timeout={{ .Values.submitter.requestTimeout }}
+        - --submitter-startup-timeout={{ .Values.submitter.startupTimeout }}
+        - --submitter-max-retries={{ .Values.submitter.maxRetries }}
+        - --submitter-initial-backoff={{ .Values.submitter.initialBackoff }}
         {{- end }}
         {{- if or .Values.prometheus.metrics.enable .Values.controller.pprof.enable }}
         ports:
@@ -166,6 +180,15 @@ spec:
         {{- with .Values.controller.resources }}
         resources:
           {{- toYaml . | nindent 10 }}
+        {{- end }}
+        {{- if include "spark-operator.submitter.enabled" . }}
+        startupProbe:
+          httpGet:
+            port: 8081
+            scheme: HTTP
+            path: /healthz
+          failureThreshold: {{ .Values.submitter.startupProbe.failureThreshold }}
+          periodSeconds: {{ .Values.submitter.startupProbe.periodSeconds }}
         {{- end }}
         livenessProbe:
           httpGet:

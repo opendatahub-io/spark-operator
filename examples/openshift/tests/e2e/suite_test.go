@@ -37,6 +37,7 @@ import (
 	"helm.sh/helm/v3/pkg/cli"
 	admissionregistrationv1 "k8s.io/api/admissionregistration/v1"
 	corev1 "k8s.io/api/core/v1"
+	discoveryv1 "k8s.io/api/discovery/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -458,12 +459,13 @@ func waitForMutatingWebhookReady(ctx context.Context, key types.NamespacedName) 
 			if svcRef == nil {
 				return false, fmt.Errorf("webhook service is nil")
 			}
-			endpoints := corev1.Endpoints{}
-			endpointsKey := types.NamespacedName{Namespace: svcRef.Namespace, Name: svcRef.Name}
-			if err := k8sClient.Get(ctx, endpointsKey, &endpoints); err != nil {
+			endpointSliceList := discoveryv1.EndpointSliceList{}
+			if err := k8sClient.List(
+				ctx, &endpointSliceList, client.InNamespace(svcRef.Namespace), client.MatchingLabels{discoveryv1.LabelServiceName: svcRef.Name},
+			); err != nil {
 				return false, err
 			}
-			if len(endpoints.Subsets) == 0 {
+			if len(endpointSliceList.Items) == 0 {
 				return false, nil
 			}
 		}
@@ -494,12 +496,13 @@ func waitForValidatingWebhookReady(ctx context.Context, key types.NamespacedName
 			if svcRef == nil {
 				return false, fmt.Errorf("webhook service is nil")
 			}
-			endpoints := corev1.Endpoints{}
-			endpointsKey := types.NamespacedName{Namespace: svcRef.Namespace, Name: svcRef.Name}
-			if err := k8sClient.Get(ctx, endpointsKey, &endpoints); err != nil {
+			endpointSliceList := discoveryv1.EndpointSliceList{}
+			if err := k8sClient.List(
+				ctx, &endpointSliceList, client.InNamespace(svcRef.Namespace), client.MatchingLabels{discoveryv1.LabelServiceName: svcRef.Name},
+			); err != nil {
 				return false, err
 			}
-			if len(endpoints.Subsets) == 0 {
+			if len(endpointSliceList.Items) == 0 {
 				return false, nil
 			}
 		}

@@ -1,8 +1,16 @@
 .idea/
 .vscode/
+.kube/
 bin/
 codecov.yaml
 cover.out
 cover.html
 .DS_Store
 *.iml
+
+# Documentation website build artifacts
+docs/website/_build/
+
+# Python virtual environments
+.venv/
+venv/

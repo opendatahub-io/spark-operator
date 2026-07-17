@@ -123,6 +123,20 @@ tests:
           path: spec.template.metadata.annotations.key2
           value: value2
 
+  - it: Should add deployment annotations if `controller.deploymentAnnotations` is set
+    set:
+      controller:
+        deploymentAnnotations:
+          key1: value1
+          key2: value2
+    asserts:
+      - equal:
+          path: metadata.annotations.key1
+          value: value1
+      - equal:
+          path: metadata.annotations.key2
+          value: value2
+
   - it: Should contain `--zap-log-level` arg if `controller.logLevel` is set
     set:
       controller:
@@ -239,6 +253,22 @@ tests:
       - contains:
           path: spec.template.spec.containers[?(@.name=="spark-operator-controller")].args
           content: --enable-batch-scheduler=true
+
+  - it: Should not contain `--enable-driver-pdb` arg by default
+    asserts:
+      - notContains:
+          path: spec.template.spec.containers[?(@.name=="spark-operator-controller")].args
+          content: --enable-driver-pdb=true
+
+  - it: Should contain `--enable-driver-pdb` arg if `controller.driverPodDisruptionBudget.enable` is `true`
+    set:
+      controller:
+        driverPodDisruptionBudget:
+          enable: true
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[?(@.name=="spark-operator-controller")].args
+          content: --enable-driver-pdb=true
 
   - it: Should contain `--default-batch-scheduler` arg if `controller.batchScheduler.default` is set
     set:
@@ -893,4 +923,75 @@ tests:
       - contains:
           path: spec.template.spec.containers[?(@.name=="spark-operator-controller")].args
           content: --feature-gates=PartialRestart=true,AnotherFeature=false
+
+  - it: Should render submitter args when RestSubmitter feature gate is enabled
+    set:
+      controller:
+        featureGates:
+        - name: RestSubmitter
+          enabled: true
+      submitter:
+        serviceUrl: http://my-submitter:8080/api/v1/spark-submit
+        requestTimeout: 3m
+        startupTimeout: 10m
+        maxRetries: 5
+        initialBackoff: 5s
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[?(@.name=="spark-operator-controller")].args
+          content: --submitter-service-url=http://my-submitter:8080/api/v1/spark-submit
+      - contains:
+          path: spec.template.spec.containers[?(@.name=="spark-operator-controller")].args
+          content: --submitter-request-timeout=3m
+      - contains:
+          path: spec.template.spec.containers[?(@.name=="spark-operator-controller")].args
+          content: --submitter-startup-timeout=10m
+      - contains:
+          path: spec.template.spec.containers[?(@.name=="spark-operator-controller")].args
+          content: --submitter-max-retries=5
+      - contains:
+          path: spec.template.spec.containers[?(@.name=="spark-operator-controller")].args
+          content: --submitter-initial-backoff=5s
+
+  - it: Should not render submitter args when RestSubmitter feature gate is disabled
+    set:
+      controller:
+        featureGates:
+        - name: RestSubmitter
+          enabled: false
+    asserts:
+      - notContains:
+          path: spec.template.spec.containers[?(@.name=="spark-operator-controller")].args
+          content: --submitter-service-url=http://spark-operator-submitter-svc:8080/api/v1/spark-submit
+
+  - it: Should render startup probe when RestSubmitter feature gate is enabled
+    set:
+      controller:
+        featureGates:
+        - name: RestSubmitter
+          enabled: true
+      submitter:
+        startupProbe:
+          periodSeconds: 10
+          failureThreshold: 30
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[?(@.name=="spark-operator-controller")].startupProbe.httpGet.path
+          value: /healthz
+      - equal:
+          path: spec.template.spec.containers[?(@.name=="spark-operator-controller")].startupProbe.periodSeconds
+          value: 10
+      - equal:
+          path: spec.template.spec.containers[?(@.name=="spark-operator-controller")].startupProbe.failureThreshold
+          value: 30
+
+  - it: Should not render startup probe when RestSubmitter feature gate is disabled
+    set:
+      controller:
+        featureGates:
+        - name: RestSubmitter
+          enabled: false
+    asserts:
+      - isNull:
+          path: spec.template.spec.containers[?(@.name=="spark-operator-controller")].startupProbe
 
