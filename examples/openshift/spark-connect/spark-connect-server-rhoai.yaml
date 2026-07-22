@@ -34,15 +34,8 @@ spec:
             limits:
               cpu: 1
               memory: 1Gi
-          securityContext:
-            capabilities:
-              drop:
-              - ALL
-            runAsNonRoot: true
-            allowPrivilegeEscalation: false
-            seccompProfile:
-              type: RuntimeDefault
         serviceAccountName: spark-operator-spark
+        securityContext: {}
   executor:
     instances: 2
     cores: 1
@@ -53,11 +46,4 @@ spec:
         - name: spark-kubernetes-executor
           image: quay.io/opendatahub/data-processing:Spark-v4.0.1
           imagePullPolicy: Always
-          securityContext:
-            capabilities:
-              drop:
-              - ALL
-            runAsNonRoot: true
-            allowPrivilegeEscalation: false
-            seccompProfile:
-              type: RuntimeDefault
+        securityContext: {}
