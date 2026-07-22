@@ -71,7 +71,7 @@ jobs:
       - name: Setup Go
         uses: actions/setup-go@4b73464bb391d4059bd26b0524d20df3927bd417 # v6
         with:
-          go-version-file: spark-operator-module/go.mod
+          go-version-file: go.mod
 
       - name: Create Kind cluster
         run: make kind-create-cluster
@@ -79,18 +79,75 @@ jobs:
       - name: Build module operator image
         run: make docker-build-spark-operator-module TAG=test
 
-      - name: Load image into Kind
+      - name: Load module operator image into Kind
         run: kind load docker-image quay.io/opendatahub/spark-operator-module-controller:test --name spark-operator
+
+      - name: Build spark-operator image
+        run: make docker-build IMAGE=quay.io/opendatahub/spark-operator:local
+
+      - name: Load spark-operator image into Kind
+        run: kind load docker-image quay.io/opendatahub/spark-operator:local --name spark-operator
 
       - name: Install PodMonitor CRD
         run: |
-          kubectl apply -f https://raw.githubusercontent.com/prometheus-operator/prometheus-operator/main/example/prometheus-operator-crd/monitoring.coreos.com_podmonitors.yaml
+          kubectl apply -f https://raw.githubusercontent.com/prometheus-operator/prometheus-operator/v0.92.1/example/prometheus-operator-crd/monitoring.coreos.com_podmonitors.yaml
 
       - name: Run module operator E2E tests
         run: |
           cd spark-operator-module && \
+          CLEANUP=false \
           MODULE_IMAGE=quay.io/opendatahub/spark-operator-module-controller:test \
           go test ./tests/e2e/ -v -timeout 10m -count=1
+
+      - name: Override spark-operator image on module operator
+        run: |
+          kubectl set env deployment/spark-operator-module-controller-manager \
+            -n opendatahub -c manager \
+            RELATED_IMAGE_ODH_SPARK_OPERATOR_IMAGE=quay.io/opendatahub/spark-operator:local
+          kubectl rollout status deployment/spark-operator-module-controller-manager -n opendatahub --timeout=120s
+
+      - name: Create SparkOperator CR
+        run: |
+          cat <<'EOF' | kubectl apply -f -
+          apiVersion: components.platform.opendatahub.io/v1alpha1
+          kind: SparkOperator
+          metadata:
+            name: default-sparkoperator
+          spec:
+            managementState: Managed
+          EOF
+
+      - name: Wait for SparkOperator CR to reach ProvisioningSucceeded
+        run: |
+          echo "Waiting for SparkOperator CR to be provisioned..."
+          for i in $(seq 1 60); do
+            STATUS=$(kubectl get sparkoperator default-sparkoperator \
+              -o jsonpath='{range .status.conditions[*]}{.type}={.status}{"\n"}{end}' 2>/dev/null || true)
+            echo "Attempt $i/60: $STATUS"
+            if echo "$STATUS" | grep -q "ProvisioningSucceeded=True"; then
+              echo "SparkOperator CR provisioned successfully!"
+              exit 0
+            fi
+            sleep 5
+          done
+          echo "Timeout waiting for ProvisioningSucceeded"
+          kubectl get sparkoperator default-sparkoperator -o yaml || true
+          exit 1
+
+      - name: Wait for spark-operator pods to be Running
+        run: |
+          kubectl wait --for=condition=Available deployment/spark-operator-controller \
+            -n opendatahub --timeout=300s
+          kubectl wait --for=condition=Available deployment/spark-operator-webhook \
+            -n opendatahub --timeout=300s
+          echo "Spark operator pods are running:"
+          kubectl get pods -n opendatahub
+
+      - name: Run spark-operator E2E tests (preinstalled mode)
+        run: |
+          INSTALL_METHOD=preinstalled \
+          RELEASE_NAMESPACE=opendatahub \
+          go test ./examples/openshift/tests/e2e/ -v -timeout 10m -count=1
 
       - name: Debug - Show cluster state
         if: failure()
@@ -99,10 +156,25 @@ jobs:
           kubectl get pods -A || true
           echo ""
           echo "=== SparkOperator CRs ==="
-          kubectl get sparkoperator -A -o yaml 2>/dev/null || true
+          kubectl get sparkoperator default-sparkoperator -o yaml 2>/dev/null || true
           echo ""
-          echo "=== Events in opendatahub namespace ==="
-          kubectl get events -n opendatahub --sort-by='.lastTimestamp' 2>/dev/null | tail -30 || true
+          echo "=== SparkApplications ==="
+          kubectl get sparkapplications -A -o yaml 2>/dev/null || true
+          echo ""
+          echo "=== SparkConnects ==="
+          kubectl get sparkconnects -A -o yaml 2>/dev/null || true
+          echo ""
+          echo "=== Events ==="
+          kubectl get events -A --sort-by='.lastTimestamp' | tail -50 || true
           echo ""
           echo "=== Module operator logs ==="
-          kubectl logs -n opendatahub deployment/spark-operator-module-controller-manager -c manager --tail=100 2>/dev/null || true
+          kubectl logs -n opendatahub deployment/spark-operator-module-controller-manager \
+            -c manager --tail=200 2>/dev/null || true
+          echo ""
+          echo "=== Spark operator controller logs ==="
+          kubectl logs -n opendatahub deployment/spark-operator-controller \
+            --tail=200 2>/dev/null || true
+          echo ""
+          echo "=== Spark operator webhook logs ==="
+          kubectl logs -n opendatahub deployment/spark-operator-webhook \
+            --tail=200 2>/dev/null || true

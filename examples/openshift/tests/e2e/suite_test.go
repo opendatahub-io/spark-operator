@@ -61,9 +61,9 @@ import (
 // http://onsi.github.io/ginkgo/ to learn more about Ginkgo.
 
 const (
-	ReleaseName      = "spark-operator"
-	ReleaseNamespace = "spark-operator"
-	TestNamespace    = "spark-test"
+	ReleaseName             = "spark-operator"
+	DefaultReleaseNamespace = "spark-operator"
+	TestNamespace           = "spark-test"
 
 	PollInterval = 1 * time.Second
 	WaitTimeout  = 5 * time.Minute
@@ -74,13 +74,14 @@ const (
 )
 
 var (
-	cfg           *rest.Config
-	testEnv       *envtest.Environment
-	k8sClient     client.Client
-	clientset     *kubernetes.Clientset
-	installMethod string
-	repoRoot      string
-	origParamsEnv []byte
+	cfg              *rest.Config
+	testEnv          *envtest.Environment
+	k8sClient        client.Client
+	clientset        *kubernetes.Clientset
+	installMethod    string
+	ReleaseNamespace string
+	repoRoot         string
+	origParamsEnv    []byte
 
 	mutatingWebhookName   string
 	validatingWebhookName string
@@ -97,6 +98,11 @@ var _ = BeforeSuite(func() {
 	var err error
 
 	repoRoot = filepath.Join("..", "..", "..", "..")
+
+	ReleaseNamespace = os.Getenv("RELEASE_NAMESPACE")
+	if ReleaseNamespace == "" {
+		ReleaseNamespace = DefaultReleaseNamespace
+	}
 
 	installMethod = os.Getenv("INSTALL_METHOD")
 	if installMethod == "" {
