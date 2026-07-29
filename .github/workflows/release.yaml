@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - release-*
+      - rhoai-*
     paths:
       - VERSION
 

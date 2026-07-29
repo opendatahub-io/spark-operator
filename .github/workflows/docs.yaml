@@ -11,7 +11,9 @@ on:
       - ".readthedocs.yaml"
       - ".github/workflows/docs.yaml"
   push:
-    branches: [master]
+    branches:
+      - master
+      - rhoai-*
     paths:
       - "docs/website/**"
       - ".readthedocs.yaml"

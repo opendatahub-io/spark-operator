@@ -2,9 +2,13 @@ name: Codecov Coverage
 
 on:
   push:
-    branches: [main]
+    branches:
+      - main
+      - rhoai-*
   pull_request:
-    branches: [main]
+    branches:
+      - main
+      - rhoai-*
 
 jobs:
   upload-coverage:
