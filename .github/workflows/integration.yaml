@@ -6,12 +6,14 @@ on:
       - master
       - release-*
       - main
+      - rhoai-*
 
   push:
     branches:
       - master
       - release-*
       - main
+      - rhoai-*
 
 permissions:
   contents: read

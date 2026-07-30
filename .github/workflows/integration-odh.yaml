@@ -15,7 +15,9 @@ name: OpenShift/KIND ODH Spark Pi E2E (Kustomize)
 
 on:
   push:
-    branches: [main]
+    branches:
+      - main
+      - rhoai-*
     paths:
       - 'examples/openshift/**'
       - 'config/**'

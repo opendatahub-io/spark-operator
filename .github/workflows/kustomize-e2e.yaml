@@ -13,6 +13,7 @@ on:
   pull_request:
     branches:
       - main
+      - rhoai-*
     paths:
       - 'config/**'
       - 'examples/openshift/tests/e2e/**'
@@ -27,6 +28,7 @@ on:
   push:
     branches:
       - main
+      - rhoai-*
     paths:
       - 'config/**'
       - 'examples/openshift/tests/e2e/**'
