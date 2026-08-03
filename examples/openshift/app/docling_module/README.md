@@ -82,12 +82,12 @@ pip install -r requirements.txt
 **Option A: Use sample PDFs (quickest way to test)**
 
 ```bash
-python scripts/docling_module/processor.py
+python app/docling_module/processor.py
 ```
 
 This will:
-- Process all PDFs in `tests/assets/`
-- Save outputs to `tests/output/`
+- Process all PDFs in `assets/`
+- Save outputs to `output/`
 - Run 3 examples (single file, custom config, batch processing)
 
 **OR**
@@ -96,12 +96,12 @@ This will:
 
 ```bash
 # Process your own PDFs with custom input/output directories
-python scripts/docling_module/processor.py \
+python app/docling_module/processor.py \
     --input-dir /path/to/your/pdfs \
     --output-dir /path/to/save/output
 
 # Example with relative paths
-python scripts/docling_module/processor.py \
+python app/docling_module/processor.py \
     --input-dir ./my-pdfs \
     --output-dir ./my-output
 ```
@@ -110,20 +110,20 @@ python scripts/docling_module/processor.py \
 
 ```bash
 # View generated files
-ls -la tests/output/
+ls -la output/
 
 # View markdown content
-cat tests/output/example1/*.md
+cat output/example1/*.md
 
 # View the output structure
-find tests/output -type f | head -20
+find output -type f | head -20
 ```
 
 ### Using as a Python Module
 
 ```python
 # Option 1: Simple function API
-from scripts.docling_module import docling_process
+from app.docling_module import docling_process
 
 result = docling_process("document.pdf")
 if result.success:
@@ -131,7 +131,7 @@ if result.success:
     print(result.json_content) # JSON content
 
 # Option 2: Batch processing
-from scripts.docling_module import DocumentProcessorFactory
+from app.docling_module import DocumentProcessorFactory
 
 processor = DocumentProcessorFactory.create_processor_with_defaults()
 results = processor.process_directory("/path/to/pdfs")
@@ -146,7 +146,7 @@ for r in results:
 ### DocumentConfig Parameters
 
 ```python
-from docling_module import DocumentConfig, DocumentProcessorFactory
+from app.docling_module import DocumentConfig, DocumentProcessorFactory
 
 config = DocumentConfig(
     # === Basic Options ===
@@ -211,7 +211,7 @@ processor = DocumentProcessorFactory.create_pdf_processor(config)
 When using CLI or batch processing:
 
 ```
-tests/output/
+output/
 ├── example1/                    # Single file, default config
 │   ├── document.md              # Markdown content
 │   ├── document.json            # JSON content (docling format)
