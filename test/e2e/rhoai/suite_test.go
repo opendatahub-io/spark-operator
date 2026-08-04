@@ -71,13 +71,13 @@ const (
 )
 
 var (
-	cfg               *rest.Config
-	testEnv           *envtest.Environment
-	k8sClient         client.Client
-	clientset         *kubernetes.Clientset
-	installMethod     string
-	repoRoot          string
-	origParamsEnv     []byte
+	cfg           *rest.Config
+	testEnv       *envtest.Environment
+	k8sClient     client.Client
+	clientset     *kubernetes.Clientset
+	installMethod string
+	repoRoot      string
+	origParamsEnv []byte
 	sparkAppImage string
 
 	mutatingWebhookName   string
