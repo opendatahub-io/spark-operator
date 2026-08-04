@@ -13,7 +13,7 @@ flags:
   unit:
     paths:
       - "!test/e2e/"
-      - "!examples/openshift/tests/e2e/"
+      - "!test/e2e/rhoai/"
   e2e-kustomize:
     paths:
       - "!test/e2e/"

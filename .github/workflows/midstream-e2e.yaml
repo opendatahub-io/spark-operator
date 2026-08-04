@@ -1,13 +1,13 @@
 # ============================================================================
-# Kustomize E2E Tests
+# Midstream E2E Tests
 # ============================================================================
 #
-# Runs the upstream Go/Ginkgo e2e test suite with the operator installed via
-# Kustomize manifests (config/default/) instead of Helm.
+# Runs the midstream RHOAI Go/Ginkgo e2e test suite with the operator
+# installed via Kustomize manifests (config/default/).
 #
 # ============================================================================
 
-name: Kustomize E2E Test
+name: Midstream E2E Test
 
 on:
   pull_request:
@@ -16,9 +16,8 @@ on:
       - rhoai-*
     paths:
       - 'config/**'
-      - 'examples/openshift/tests/e2e/**'
-      - 'examples/openshift/Makefile'
-      - '.github/workflows/kustomize-e2e.yaml'
+      - 'test/e2e/rhoai/**'
+      - '.github/workflows/midstream-e2e.yaml'
       - 'cmd/**'
       - 'internal/**'
       - 'api/**'
@@ -31,9 +30,8 @@ on:
       - rhoai-*
     paths:
       - 'config/**'
-      - 'examples/openshift/tests/e2e/**'
-      - 'examples/openshift/Makefile'
-      - '.github/workflows/kustomize-e2e.yaml'
+      - 'test/e2e/rhoai/**'
+      - '.github/workflows/midstream-e2e.yaml'
       - 'cmd/**'
       - 'internal/**'
       - 'api/**'
@@ -50,8 +48,8 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  kustomize-e2e-test:
-    name: Kustomize E2E (K8s ${{ matrix.k8s_version }})
+  midstream-e2e-test:
+    name: Midstream E2E (K8s ${{ matrix.k8s_version }})
     runs-on: ubuntu-latest
     strategy:
       matrix:
@@ -67,12 +65,12 @@ jobs:
           - v1.32.0
     steps:
       - name: Checkout source code
-        uses: actions/checkout@v5.0.0
+        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6
         with:
           fetch-depth: 0
 
       - name: Set up Go
-        uses: actions/setup-go@v6
+        uses: actions/setup-go@4b73464bb391d4059bd26b0524d20df3927bd417 # v6
         with:
           go-version-file: go.mod
 
@@ -82,17 +80,18 @@ jobs:
       - name: Build and load image to Kind cluster
         run: make kind-load-image IMAGE_TAG=local
 
-      - name: Run kustomize e2e tests
-        run: make -C examples/openshift e2e-kustomize-test
+      - name: Run midstream RHOAI e2e tests
+        run: make -C test/e2e/rhoai e2e-rhoai-test
         env:
+          INSTALL_METHOD: kustomize
           SPARK_OPERATOR_IMAGE: ghcr.io/kubeflow/spark-operator/controller:local
 
       - name: Upload e2e coverage to Codecov
         if: always() && github.event_name == 'push'
         uses: codecov/codecov-action@75cd11691c0faa626561e295848008c8a7dddffe # v5
         with:
-          files: cover-e2e-kustomize.out
-          flags: e2e-kustomize
+          files: cover-e2e-rhoai.out
+          flags: e2e-rhoai
           token: ${{ secrets.CODECOV_TOKEN }}
 
       - name: Debug - Show cluster state
