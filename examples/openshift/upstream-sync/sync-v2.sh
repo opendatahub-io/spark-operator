@@ -9,6 +9,10 @@ STATE_FILE="${STATE_DIR}/current.state"
 LOG_FILE="${STATE_DIR}/sync.log"
 REPORT_FILE="${STATE_DIR}/pr-report.md"
 
+# MIDSTREAM_REMOTE defaults to "origin" (correct in CI).
+# Override for local testing: MIDSTREAM_REMOTE=midstream ./sync-v2.sh
+MIDSTREAM_REMOTE="${MIDSTREAM_REMOTE:-origin}"
+
 DRY_RUN=false
 RESUME=false
 
@@ -52,6 +56,7 @@ log() {
 # ---------------------------------------------------------------------------
 save_state() {
     local state="$1"; shift
+    STATE="$state"
     cat > "$STATE_FILE" <<STATEEOF
 STATE=$state
 TIMESTAMP=$(date -u +%Y-%m-%dT%H:%M:%SZ)
@@ -170,10 +175,10 @@ step_fetch() {
         git fetch upstream
     fi
 
-    git fetch origin
+    git fetch "$MIDSTREAM_REMOTE"
 
     UPSTREAM_SHA=$(git rev-parse "upstream/${UPSTREAM_BRANCH}")
-    MIDSTREAM_SHA=$(git rev-parse "origin/${MIDSTREAM_BRANCH}")
+    MIDSTREAM_SHA=$(git rev-parse "${MIDSTREAM_REMOTE}/${MIDSTREAM_BRANCH}")
 
     log "Upstream  : $UPSTREAM_SHA (${UPSTREAM_BRANCH})"
     log "Midstream : $MIDSTREAM_SHA (${MIDSTREAM_BRANCH})"
@@ -184,11 +189,11 @@ step_fetch() {
         return
     fi
 
-    git checkout -B "$MIDSTREAM_BRANCH" "origin/${MIDSTREAM_BRANCH}"
+    git checkout -B "$MIDSTREAM_BRANCH" "${MIDSTREAM_REMOTE}/${MIDSTREAM_BRANCH}"
     git checkout -b "$BRANCH_NAME" 2>/dev/null || {
         log "Branch $BRANCH_NAME exists, resetting."
         git checkout "$BRANCH_NAME"
-        git reset --hard "origin/${MIDSTREAM_BRANCH}"
+        git reset --hard "${MIDSTREAM_REMOTE}/${MIDSTREAM_BRANCH}"
     }
 
     save_state "FETCHED"
@@ -239,7 +244,7 @@ step_resolve() {
 
     local -a safe_resolved=() risky_resolved=() ci_resolved=() unresolved=()
     local merge_base
-    merge_base=$(git merge-base "origin/${MIDSTREAM_BRANCH}" "upstream/${UPSTREAM_BRANCH}")
+    merge_base=$(git merge-base "${MIDSTREAM_REMOTE}/${MIDSTREAM_BRANCH}" "upstream/${UPSTREAM_BRANCH}")
 
     : > "${STATE_DIR}/risky-report.md"
 
@@ -360,7 +365,7 @@ step_validate() {
 # ---------------------------------------------------------------------------
 build_report() {
     local merge_base
-    merge_base=$(git merge-base "origin/${MIDSTREAM_BRANCH}" "upstream/${UPSTREAM_BRANCH}" 2>/dev/null || echo "unknown")
+    merge_base=$(git merge-base "${MIDSTREAM_REMOTE}/${MIDSTREAM_BRANCH}" "upstream/${UPSTREAM_BRANCH}" 2>/dev/null || echo "unknown")
 
     local risky_section=""
     if [[ -s "${STATE_DIR}/risky-report.md" ]]; then
@@ -383,7 +388,7 @@ HEREDOC_WARN
 | | |
 |---|---|
 | **Upstream** | \`${UPSTREAM_REPO}\` @ \`${UPSTREAM_SHA:-unknown}\` (\`${UPSTREAM_BRANCH}\`) |
-| **Midstream** | \`origin/${MIDSTREAM_BRANCH}\` @ \`${MIDSTREAM_SHA:-unknown}\` |
+| **Midstream** | \`${MIDSTREAM_REMOTE}/${MIDSTREAM_BRANCH}\` @ \`${MIDSTREAM_SHA:-unknown}\` |
 | **Merge base** | \`${merge_base}\` |
 | **Date** | ${SYNC_DATE:-$(date +%Y-%m-%d)} |
 
@@ -414,7 +419,7 @@ step_create_pr() {
 
     build_report
 
-    git push origin "$BRANCH_NAME" --force-with-lease 2>&1 | tee -a "$LOG_FILE"
+    git push "$MIDSTREAM_REMOTE" "$BRANCH_NAME" --force-with-lease 2>&1 | tee -a "$LOG_FILE"
 
     if ! gh auth status &>/dev/null; then
         log "ERROR: gh not authenticated. PR not created."
