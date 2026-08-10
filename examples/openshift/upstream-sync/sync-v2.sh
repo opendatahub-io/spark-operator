@@ -319,10 +319,73 @@ step_resolve() {
     fi
 
     git commit --no-edit 2>/dev/null || true
+
+    # Audit risky files: the merge=ours driver may have silently kept
+    # midstream's version. Compare each risky file against upstream to
+    # detect dropped changes — even when there was no conflict.
+    audit_risky_files
+
     save_state "RESOLVED" \
         "SAFE_RESOLVED=${#safe_resolved[@]}" \
         "CI_RESOLVED=${#ci_resolved[@]}" \
-        "RISKY_RESOLVED=${#risky_resolved[@]}"
+        "RISKY_RESOLVED=${RISKY_AUDIT_COUNT:-0}"
+}
+
+# ---------------------------------------------------------------------------
+# Audit risky files after merge
+# ---------------------------------------------------------------------------
+audit_risky_files() {
+    log "Auditing risky files for dropped upstream changes..."
+    local merge_base
+    merge_base=$(git merge-base "${MIDSTREAM_REMOTE}/${MIDSTREAM_BRANCH}" "upstream/${UPSTREAM_BRANCH}")
+
+    : > "${STATE_DIR}/risky-report.md"
+    RISKY_AUDIT_COUNT=0
+
+    for file in "${RISKY_IGNORE[@]}"; do
+        file="${file%\"}"
+        file="${file#\"}"
+
+        # What upstream changed in this file since the branches diverged
+        local upstream_diff
+        upstream_diff=$(git diff "${merge_base}..upstream/${UPSTREAM_BRANCH}" -- "$file" 2>/dev/null || true)
+
+        if [[ -z "$upstream_diff" ]]; then
+            continue
+        fi
+
+        # Upstream DID change this file. Check if our merged version matches upstream.
+        local merged_content upstream_content
+        merged_content=$(git show "HEAD:${file}" 2>/dev/null || true)
+        upstream_content=$(git show "upstream/${UPSTREAM_BRANCH}:${file}" 2>/dev/null || true)
+
+        if [[ "$merged_content" == "$upstream_content" ]]; then
+            continue
+        fi
+
+        # Upstream changed this file and our version differs — flag it.
+        RISKY_AUDIT_COUNT=$((RISKY_AUDIT_COUNT + 1))
+        log "  ⚠ $file — upstream changes not fully incorporated"
+
+        {
+            echo "### \`$file\`"
+            echo ""
+            echo "<details><summary>Upstream changes since merge base (may be truncated)</summary>"
+            echo ""
+            echo '```diff'
+            echo "$upstream_diff" | head -100
+            echo '```'
+            echo ""
+            echo "</details>"
+            echo ""
+        } >> "${STATE_DIR}/risky-report.md"
+    done
+
+    if [[ $RISKY_AUDIT_COUNT -gt 0 ]]; then
+        log "Found $RISKY_AUDIT_COUNT risky file(s) with divergent upstream changes."
+    else
+        log "No risky files diverged from upstream."
+    fi
 }
 
 # ---------------------------------------------------------------------------
