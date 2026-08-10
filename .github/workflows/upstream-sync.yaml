@@ -1,0 +1,56 @@
+name: Upstream Sync
+
+on:
+  workflow_dispatch:
+    inputs:
+      dry-run:
+        type: boolean
+        default: false
+        description: "Run merge and validation but skip PR creation"
+  schedule:
+    - cron: "0 8 * * 3" # Wednesday 8:00 UTC
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout (full history)
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Install yq
+        run: |
+          sudo wget -qO /usr/local/bin/yq \
+            https://github.com/mikefarah/yq/releases/latest/download/yq_linux_amd64
+          sudo chmod +x /usr/local/bin/yq
+
+      - name: Configure git
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+      - name: Run upstream sync
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          chmod +x examples/openshift/upstream-sync/sync-v2.sh
+          bash examples/openshift/upstream-sync/sync-v2.sh \
+            ${{ inputs.dry-run == true && '--dry-run' || '' }}
+
+      - name: Upload sync state on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: sync-state
+          path: .sync-state/
+          retention-days: 7

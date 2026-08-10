@@ -15,3 +15,6 @@ docs/website/_build/
 .venv/
 venv/
 internal-acls
+
+# Upstream sync state
+.sync-state/

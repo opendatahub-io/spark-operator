@@ -1,0 +1,61 @@
+upstream:
+  repo: https://github.com/kubeflow/spark-operator
+  branch: master
+
+midstream:
+  branch: main
+
+# Files that are always safe to keep midstream version on conflict.
+# Midstream-only content or trivial additions (e.g., branch triggers).
+# Auto-resolved silently — no review needed.
+safe-ignore:
+  - ".tekton/*"
+  - "examples/openshift/**"
+  - "spark-operator-module/**"
+  - "config/overlays/**"
+  - "config/pdb/**"
+  - "config/spark-rbac/**"
+  - "Makefile.midstream*.mk"
+  - "Makefile.spark-operator-module.mk"
+  - "test/drift/drift_test.go"
+  - "test/kustomize/**"
+  - "test/upgrade/**"
+  - "chaos/**"
+  - "docs/website/**"
+  - "api/python_api/**"
+  - "api/openapi-spec/**"
+  - "hack/openapi/**"
+  - "hack/python-api/**"
+  - "hack/swagger/**"
+  - "pkg/tls/**"
+  - "pkg/version/**"
+  - "spark-operator-module-controller.Dockerfile"
+  - "examples/openshift/Dockerfile.odh"
+  - ".github/workflows/upstream-sync.yaml"
+
+# Files where midstream has structural changes but upstream changes matter.
+# Auto-resolved with ours on conflict, but flagged in the PR body
+# with a diff of what upstream changed so a human can review.
+risky-ignore:
+  - "config/default/kustomization.yaml"
+  - "config/default/params.env"
+  - "config/manager/manager.yaml"
+  - "config/rbac/role.yaml"
+  - "config/webhook/deployment.yaml"
+  - "cmd/operator/webhook/start.go"
+  - "test/e2e/suite_test.go"
+
+# CI workflow files — midstream adds branch triggers.
+# Safe in practice but listed separately for clarity.
+ci-ignore:
+  - ".github/workflows/integration.yaml"
+  - ".github/workflows/release.yaml"
+  - ".github/workflows/docs.yaml"
+  - ".github/workflows/kustomize-drift-check.yaml"
+  - ".github/workflows/kustomize-lint.yaml"
+  - ".github/workflows/shell-lint.yaml"
+
+# Post-merge validation commands (run in order, all must pass).
+validation:
+  - "go mod tidy"
+  - "make build-operator"
