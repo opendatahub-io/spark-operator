@@ -37,6 +37,7 @@ safe-ignore:
 # Auto-resolved with ours on conflict, but flagged in the PR body
 # with a diff of what upstream changed so a human can review.
 risky-ignore:
+  - "Makefile"
   - "config/default/kustomization.yaml"
   - "config/default/params.env"
   - "config/manager/manager.yaml"
