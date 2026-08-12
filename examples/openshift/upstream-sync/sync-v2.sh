@@ -84,8 +84,6 @@ load_state() {
 # ---------------------------------------------------------------------------
 SAFE_IGNORE=()
 RISKY_IGNORE=()
-CI_IGNORE=()
-ALL_IGNORE=()
 VALIDATION_CMDS=()
 UPSTREAM_REPO=""
 UPSTREAM_BRANCH=""
@@ -103,10 +101,7 @@ parse_config() {
 
     mapfile -t SAFE_IGNORE   < <(yq '.safe-ignore[]'  "$CONFIG_FILE" 2>/dev/null || true)
     mapfile -t RISKY_IGNORE  < <(yq '.risky-ignore[]'  "$CONFIG_FILE" 2>/dev/null || true)
-    mapfile -t CI_IGNORE     < <(yq '.ci-ignore[]'     "$CONFIG_FILE" 2>/dev/null || true)
     mapfile -t VALIDATION_CMDS < <(yq '.validation[]'  "$CONFIG_FILE" 2>/dev/null || true)
-
-    ALL_IGNORE=("${SAFE_IGNORE[@]}" "${CI_IGNORE[@]}")
 }
 
 # ---------------------------------------------------------------------------
@@ -127,6 +122,27 @@ matches_patterns() {
 }
 
 # ---------------------------------------------------------------------------
+# Run go mod tidy without bumping the go/toolchain directives
+# ---------------------------------------------------------------------------
+go_mod_tidy_safe() {
+    local go_ver toolchain_ver
+    go_ver=$(grep '^go ' go.mod | awk '{print $2}')
+    toolchain_ver=$(grep '^toolchain ' go.mod | awk '{print $2}')
+
+    go mod tidy "$@"
+    local rc=$?
+
+    go mod edit -go="$go_ver"
+    if [[ -n "$toolchain_ver" ]]; then
+        go mod edit -toolchain="$toolchain_ver"
+    else
+        go mod edit -toolchain=none
+    fi
+
+    return $rc
+}
+
+# ---------------------------------------------------------------------------
 # Set up .git/info/attributes for merge=ours
 # ---------------------------------------------------------------------------
 setup_merge_drivers() {
@@ -135,7 +151,7 @@ setup_merge_drivers() {
     mkdir -p "$(dirname "$attrs")"
     : > "$attrs"
 
-    local all_patterns=("${ALL_IGNORE[@]}" "${RISKY_IGNORE[@]}")
+    local all_patterns=("${SAFE_IGNORE[@]}" "${RISKY_IGNORE[@]}")
     for pattern in "${all_patterns[@]}"; do
         pattern="${pattern%\"}"
         pattern="${pattern#\"}"
@@ -242,7 +258,7 @@ step_resolve() {
         return
     fi
 
-    local -a safe_resolved=() risky_resolved=() ci_resolved=() unresolved=()
+    local -a safe_resolved=() risky_resolved=() unresolved=()
     local merge_base
     merge_base=$(git merge-base "${MIDSTREAM_REMOTE}/${MIDSTREAM_BRANCH}" "upstream/${UPSTREAM_BRANCH}")
 
@@ -253,11 +269,6 @@ step_resolve() {
             git checkout --ours -- "$file" 2>/dev/null && git add "$file"
             safe_resolved+=("$file")
             log "  safe-resolved: $file"
-
-        elif matches_patterns "$file" "${CI_IGNORE[@]}"; then
-            git checkout --ours -- "$file" 2>/dev/null && git add "$file"
-            ci_resolved+=("$file")
-            log "  ci-resolved: $file"
 
         elif matches_patterns "$file" "${RISKY_IGNORE[@]}"; then
             # Capture what upstream changed before resolving
@@ -279,7 +290,7 @@ step_resolve() {
         fi
     done <<< "$conflicted"
 
-    log "Resolved: safe=${#safe_resolved[@]} ci=${#ci_resolved[@]} risky=${#risky_resolved[@]} unresolved=${#unresolved[@]}"
+    log "Resolved: safe=${#safe_resolved[@]} risky=${#risky_resolved[@]} unresolved=${#unresolved[@]}"
 
     # Try to handle go.mod/go.sum conflicts automatically
     if [[ ${#unresolved[@]} -gt 0 ]]; then
@@ -300,7 +311,7 @@ step_resolve() {
             git checkout --theirs -- go.sum 2>/dev/null || true
             git add go.mod go.sum
 
-            if go mod tidy 2>> "$LOG_FILE"; then
+            if go_mod_tidy_safe 2>> "$LOG_FILE"; then
                 git add go.mod go.sum
                 log "go.mod/go.sum resolved via go mod tidy."
             else
@@ -327,7 +338,6 @@ step_resolve() {
 
     save_state "RESOLVED" \
         "SAFE_RESOLVED=${#safe_resolved[@]}" \
-        "CI_RESOLVED=${#ci_resolved[@]}" \
         "RISKY_RESOLVED=${RISKY_AUDIT_COUNT:-0}"
 }
 
@@ -386,6 +396,26 @@ audit_risky_files() {
     else
         log "No risky files diverged from upstream."
     fi
+
+    # Warn if upstream touched any safe-ignore files (should be midstream-only).
+    for file in "${SAFE_IGNORE[@]}"; do
+        file="${file%\"}"
+        file="${file#\"}"
+        local safe_diff
+        safe_diff=$(git diff "${merge_base}..upstream/${UPSTREAM_BRANCH}" -- "$file" 2>/dev/null || true)
+        if [[ -n "$safe_diff" ]]; then
+            log "  WARNING: safe-ignore file '$file' was changed upstream — may need reclassification to risky-ignore"
+        fi
+    done
+
+    # Detect midstream-only paths not covered by safe-ignore.
+    log "Checking for midstream-only paths not in sync config..."
+    local all_config_patterns=("${SAFE_IGNORE[@]}" "${RISKY_IGNORE[@]}")
+    while IFS= read -r midstream_file; do
+        if ! matches_patterns "$midstream_file" "${all_config_patterns[@]}"; then
+            log "  NOTICE: '$midstream_file' exists only in midstream but is not in sync-config.yaml"
+        fi
+    done < <(git diff --name-only --diff-filter=A "upstream/${UPSTREAM_BRANCH}..HEAD" 2>/dev/null || true)
 }
 
 # ---------------------------------------------------------------------------
@@ -396,7 +426,7 @@ step_validate() {
 
     # go mod tidy (even if merge was clean — deps may need reconciling)
     log "Running go mod tidy..."
-    if go mod tidy 2>> "$LOG_FILE"; then
+    if go_mod_tidy_safe 2>> "$LOG_FILE"; then
         if ! git diff --quiet go.mod go.sum 2>/dev/null; then
             git add go.mod go.sum
             git commit -m "chore: go mod tidy after upstream sync"
@@ -461,7 +491,6 @@ HEREDOC_WARN
 |---|---|---|
 | Merged cleanly | — | Upstream changes applied |
 | Safe-ignore | ${SAFE_RESOLVED:-0} | Kept midstream (no review needed) |
-| CI-ignore | ${CI_RESOLVED:-0} | Kept midstream branch triggers |
 | Risky-ignore | ${RISKY_RESOLVED:-0} | Kept midstream (**review below**) |
 | go.mod/go.sum | — | Resolved via \`go mod tidy\` |
 
