@@ -1,12 +1,27 @@
 name: Spark Operator Module CI
 
 on:
+  push:
+    branches:
+      - main
+      - "rhoai-*"
+    paths:
+      - "spark-operator-module/**"
+      - "spark-operator-module-controller.Dockerfile"
+      - "Makefile.spark-operator-module.mk"
+      - "Makefile"
+      - "config/overlays/odh/**"
+      - "config/overlays/rhoai/**"
+      - ".github/workflows/spark-operator-module-ci.yaml"
   pull_request:
     paths:
       - "spark-operator-module/**"
       - "spark-operator-module-controller.Dockerfile"
       - "Makefile.spark-operator-module.mk"
       - "Makefile"
+      - "config/overlays/odh/**"
+      - "config/overlays/rhoai/**"
+      - ".github/workflows/spark-operator-module-ci.yaml"
   workflow_dispatch:
 
 concurrency:
