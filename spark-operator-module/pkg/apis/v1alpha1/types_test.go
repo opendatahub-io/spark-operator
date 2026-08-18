@@ -31,6 +31,21 @@ func TestGetManagementState_DefaultManaged(t *testing.T) {
 	g.Expect(GetManagementState(sparkOperator)).To(Equal(common.Managed))
 }
 
+func TestGetManagementState_ExplicitManaged(t *testing.T) {
+	g := NewWithT(t)
+
+	sparkOperator := &SparkOperator{}
+	sparkOperator.Spec.ManagementState = common.Managed
+
+	g.Expect(GetManagementState(sparkOperator)).To(Equal(common.Managed))
+}
+
+func TestGetManagementState_NilDefaultsToManaged(t *testing.T) {
+	g := NewWithT(t)
+
+	g.Expect(GetManagementState(nil)).To(Equal(common.Managed))
+}
+
 func TestSparkOperatorAccessors(t *testing.T) {
 	g := NewWithT(t)
 

@@ -43,3 +43,31 @@ func TestCheckDeploymentsReady_Available(t *testing.T) {
 	err := checkDeploymentsReady(context.Background(), cli, "opendatahub", []string{"spark-operator-controller"})
 	g.Expect(err).NotTo(HaveOccurred())
 }
+
+func TestCheckDeploymentsReady_ExistsButUnavailable(t *testing.T) {
+	g := NewWithT(t)
+
+	dep := &appsv1.Deployment{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:       "spark-operator-controller",
+			Namespace:  "opendatahub",
+			Generation: 1,
+		},
+		Spec: appsv1.DeploymentSpec{
+			Selector: &metav1.LabelSelector{MatchLabels: map[string]string{"app": "spark-operator-controller"}},
+			Template: corev1.PodTemplateSpec{
+				ObjectMeta: metav1.ObjectMeta{Labels: map[string]string{"app": "spark-operator-controller"}},
+				Spec:       corev1.PodSpec{Containers: []corev1.Container{{Name: "main", Image: "test"}}},
+			},
+		},
+	}
+	dep.Status.AvailableReplicas = 0
+	dep.Status.UpdatedReplicas = 0
+	dep.Status.ObservedGeneration = 1
+
+	cli := fake.NewClientBuilder().WithObjects(dep).WithStatusSubresource(dep).Build()
+	err := checkDeploymentsReady(context.Background(), cli, "opendatahub", []string{"spark-operator-controller"})
+	g.Expect(err).To(HaveOccurred())
+	g.Expect(err.Error()).To(ContainSubstring("spark-operator-controller"))
+}
+

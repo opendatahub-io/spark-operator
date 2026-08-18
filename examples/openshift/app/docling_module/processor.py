@@ -388,12 +388,12 @@ Examples:
     )
     parser.add_argument(
         "--input-dir", 
-        help="Directory containing PDF files to process (default: tests/assets)",
+        help="Directory containing PDF files to process (default: assets/)",
         default=None
     )
     parser.add_argument(
         "--output-dir", 
-        help="Directory for output files (default: tests/output)",
+        help="Directory for output files (default: output/)",
         default=None
     )
     args = parser.parse_args()
@@ -402,12 +402,12 @@ Examples:
     if args.input_dir:
         assets_dir = Path(args.input_dir)
     else:
-        assets_dir = Path(__file__).parent.parent.parent / "tests" / "assets"
+        assets_dir = Path(__file__).parent.parent.parent / "assets"
     
     if args.output_dir:
         output_base = Path(args.output_dir)
     else:
-        output_base = Path(__file__).parent.parent.parent / "tests" / "output"
+        output_base = Path(__file__).parent.parent.parent / "output"
     
     print(f"\n📁 Input directory: {assets_dir}")
     print(f"📁 Output directory: {output_base}\n")

@@ -14,7 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package e2e_test
+package rhoai_test
 
 import (
 	"context"
@@ -40,7 +40,7 @@ import (
 var _ = Describe("Spark UI", func() {
 	Context("Verify Spark UI is accessible while application is running", func() {
 		ctx := context.Background()
-		path := filepath.Join("examples", "spark-pi.yaml")
+		path := filepath.Join("..", "..", "..", "examples", "openshift", "manifests", "spark-pi.yaml")
 
 		var app *v1beta2.SparkApplication
 
@@ -55,15 +55,10 @@ var _ = Describe("Spark UI", func() {
 
 			app = &v1beta2.SparkApplication{}
 			Expect(decoder.Decode(app)).NotTo(HaveOccurred())
-
-			if app.Namespace == "" {
-				app.Namespace = TestNamespace
-			}
-
-			// Use a unique name and large partition count so SparkPi runs long enough
-			// for the test to query the UI while it's still in the Running state.
+			app.Namespace = TestNamespace
 			app.Name = fmt.Sprintf("spark-pi-ui-test-%d", GinkgoRandomSeed())
 			app.Spec.Arguments = []string{"1000000"}
+			overrideSparkAppImage(app)
 
 			By("Creating SparkApplication")
 			Expect(k8sClient.Create(ctx, app)).To(Succeed())

@@ -186,9 +186,7 @@ oc get pods -n opendatahub -l app.kubernetes.io/name=spark-operator
 oc describe pod -n opendatahub -l app.kubernetes.io/component=controller | grep openshift.io/scc
 
 # Run the test suite
-cd examples/openshift/tests
-./test-operator-install.sh
-./test-spark-pi.sh
+make e2e-rhoai-test
 ```
 
 ### Step 8: Update Documentation
@@ -260,8 +258,7 @@ Use this checklist for each sync:
 - [ ] `config/overlays/rhoai/params.env` - update OPERATOR_VERSION
 
 ### Tests
-- [ ] All tests pass: `./test-operator-install.sh`
-- [ ] Spark Pi test passes: `./test-spark-pi.sh`
+- [ ] All tests pass: `make e2e-rhoai-test`
 
 ### Documentation
 - [ ] `SparkOperatorOnOpenShift.md` updated if needed
