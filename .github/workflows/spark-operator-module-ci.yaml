@@ -147,7 +147,7 @@ jobs:
         run: |
           INSTALL_METHOD=preinstalled \
           RELEASE_NAMESPACE=opendatahub \
-          go test ./examples/openshift/tests/e2e/ -v -timeout 10m -count=1
+          go test ./test/e2e/rhoai/ -v -timeout 10m -count=1
 
       - name: Debug - Show cluster state
         if: failure()
