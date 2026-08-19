@@ -1,0 +1,7 @@
+# Semgrep TLS rule suppressions
+# Format: RULE_ID:FILE_PATH
+#
+# rest_submission.go: The REST submitter uses a custom TLS config for mTLS
+# to the submitter service (CA cert + client cert). This is not overriding the
+# cluster TLS profile — it's configuring a specific service-to-service connection.
+go-http-client-tls-override:internal/controller/sparkapplication/rest_submission.go
