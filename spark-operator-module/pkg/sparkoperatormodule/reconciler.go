@@ -40,7 +40,7 @@ import (
 // +kubebuilder:rbac:groups=admissionregistration.k8s.io,resources=mutatingwebhookconfigurations;validatingwebhookconfigurations,verbs=create;delete;get;patch;update,resourceNames=spark-operator-webhook;mutating-webhook-configuration;validating-webhook-configuration
 // +kubebuilder:rbac:groups=monitoring.coreos.com,resources=podmonitors,verbs=create;delete;get;list;patch;update;watch
 // +kubebuilder:rbac:groups=cert-manager.io,resources=certificates;issuers,verbs=create;delete;get;list;patch;update;watch
-// +kubebuilder:rbac:groups=rbac.authorization.k8s.io,resources=clusterroles,verbs=bind;escalate,resourceNames=spark-operator-controller;spark-operator-webhook;spark-application;spark-operator-manager-role;spark-operator-proxy-role;spark-operator-sparkapplication-editor-role;spark-operator-sparkapplication-viewer-role;spark-operator-scheduledsparkapplication-editor-role;spark-operator-scheduledsparkapplication-viewer-role
+// +kubebuilder:rbac:groups=rbac.authorization.k8s.io,resources=clusterroles,verbs=bind;escalate,resourceNames=spark-operator-controller;spark-operator-webhook;spark-application;spark-operator-manager-role;spark-operator-proxy-role;spark-operator-sparkapplication-editor-role;spark-operator-sparkapplication-viewer-role;spark-operator-scheduledsparkapplication-editor-role;spark-operator-scheduledsparkapplication-viewer-role;spark-operator-tls-profile
 // +kubebuilder:rbac:groups=rbac.authorization.k8s.io,resources=roles,verbs=bind;escalate,resourceNames=spark-operator-leader-election-role;leader-election-role;spark-operator-webhook;spark-role;spark-operator-controller
 
 type SparkOperatorModuleReconciler struct {
@@ -133,7 +133,9 @@ func (r *SparkOperatorModuleReconciler) reconcile(ctx context.Context, sparkOper
 	return nil
 }
 
-func (r *SparkOperatorModuleReconciler) getApplicationsNamespace(ctx context.Context) string {
+// getApplicationsNamespace returns the operand namespace injected by the
+// platform operator (APPLICATIONS_NAMESPACE). It does not probe OLM.
+func (r *SparkOperatorModuleReconciler) getApplicationsNamespace(_ context.Context) string {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
@@ -141,60 +143,38 @@ func (r *SparkOperatorModuleReconciler) getApplicationsNamespace(ctx context.Con
 		return r.applicationsNamespace
 	}
 
-	if ns := os.Getenv("APPLICATIONS_NAMESPACE"); ns != "" {
+	if ns := os.Getenv(applicationsNamespaceEnv); ns != "" {
 		r.applicationsNamespace = ns
 		return ns
 	}
 
-	platform, err := r.detectPlatform(ctx)
-	if err != nil {
-		ctrl.LoggerFrom(ctx).Error(err, "failed to detect platform, defaulting to opendatahub namespace")
-		return "opendatahub"
-	}
-
-	switch platform {
-	case cluster.ManagedRhoai, cluster.SelfManagedRhoai:
-		r.applicationsNamespace = "redhat-ods-applications"
-	default:
-		r.applicationsNamespace = "opendatahub"
-	}
-
+	r.applicationsNamespace = defaultApplicationsNamespace
 	return r.applicationsNamespace
 }
 
+// getManifestSourcePath picks overlays/odh vs overlays/rhoai from the platform
+// type injected by the platform operator. It never calls DetectPlatform / OLM.
 func (r *SparkOperatorModuleReconciler) getManifestSourcePath(ctx context.Context) string {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
-	platform, err := r.detectPlatform(ctx)
-	if err != nil {
-		ctrl.LoggerFrom(ctx).Error(err, "failed to detect platform, defaulting to ODH overlay")
-		return SparkOperatorManifestSourcePathODH
-	}
-
-	switch platform {
-	case cluster.ManagedRhoai, cluster.SelfManagedRhoai:
-		return SparkOperatorManifestSourcePathRHOAI
-	default:
-		return SparkOperatorManifestSourcePathODH
-	}
+	platform := r.resolvedPlatform()
+	path := overlayForPlatform(platform)
+	ctrl.LoggerFrom(ctx).V(1).Info("selected spark-operator overlay from injected platform",
+		"platform", platform, "overlay", path)
+	return path
 }
 
-func (r *SparkOperatorModuleReconciler) detectPlatform(ctx context.Context) (cluster.Platform, error) {
+// resolvedPlatform prefers an explicit SetPlatform override (tests), then the
+// env the platform operator injects. Caller must hold r.mu.
+func (r *SparkOperatorModuleReconciler) resolvedPlatform() cluster.Platform {
 	if r.platform != nil {
-		return *r.platform, nil
+		return *r.platform
 	}
 
-	platformType := os.Getenv("ODH_PLATFORM_TYPE")
-	operatorNamespace := os.Getenv("POD_NAMESPACE")
-
-	platform, err := cluster.DetectPlatform(ctx, r.Client, platformType, operatorNamespace)
-	if err != nil {
-		return cluster.OpenDataHub, err
-	}
-
-	r.platform = &platform
-	return platform, nil
+	p := parseInjectedPlatform(injectedPlatformType())
+	r.platform = &p
+	return p
 }
 
 func (r *SparkOperatorModuleReconciler) WorkDir() string {

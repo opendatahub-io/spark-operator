@@ -58,9 +58,8 @@ import (
 )
 
 const (
-	ReleaseName      = "spark-operator"
-	ReleaseNamespace = "spark-operator"
-	TestNamespace    = "spark-test"
+	ReleaseName   = "spark-operator"
+	TestNamespace = "spark-test"
 
 	PollInterval = 1 * time.Second
 	WaitTimeout  = 5 * time.Minute
@@ -71,14 +70,15 @@ const (
 )
 
 var (
-	cfg           *rest.Config
-	testEnv       *envtest.Environment
-	k8sClient     client.Client
-	clientset     *kubernetes.Clientset
-	installMethod string
-	repoRoot      string
-	origParamsEnv []byte
-	sparkAppImage string
+	cfg              *rest.Config
+	testEnv          *envtest.Environment
+	k8sClient        client.Client
+	clientset        *kubernetes.Clientset
+	installMethod    string
+	repoRoot         string
+	origParamsEnv    []byte
+	sparkAppImage    string
+	ReleaseNamespace string
 
 	mutatingWebhookName   string
 	validatingWebhookName string
@@ -100,6 +100,10 @@ var _ = BeforeSuite(func() {
 	if installMethod == "" {
 		installMethod = InstallMethodKustomize
 	}
+	ReleaseNamespace = os.Getenv("RELEASE_NAMESPACE")
+	if ReleaseNamespace == "" {
+		ReleaseNamespace = "spark-operator"
+	}
 	sparkAppImage = os.Getenv("SPARK_APP_IMAGE")
 	logf.Log.Info("Using install method", "method", installMethod)
 	if sparkAppImage != "" {
@@ -107,7 +111,7 @@ var _ = BeforeSuite(func() {
 	}
 
 	switch installMethod {
-	case InstallMethodKustomize:
+	case InstallMethodKustomize, InstallMethodPreinstalled:
 		mutatingWebhookName = "mutating-webhook-configuration"
 		validatingWebhookName = "validating-webhook-configuration"
 	default:
