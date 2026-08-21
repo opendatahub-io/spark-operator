@@ -14,6 +14,8 @@
 name: OpenShift/KIND ODH Spark Pi E2E (Kustomize)
 
 on:
+  schedule:
+    - cron: '0 4 * * 1'
   push:
     branches:
       - main

@@ -2,6 +2,8 @@
 name: Shell Lint
 
 on:
+  schedule:
+    - cron: '0 4 * * 1'
   pull_request:
     branches:
       - master

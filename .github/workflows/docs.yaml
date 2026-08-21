@@ -5,6 +5,8 @@ name: Documentation
 # Read the Docs (see .readthedocs.yaml), not by this workflow.
 
 on:
+  schedule:
+    - cron: '0 4 * * 1'
   pull_request:
     paths:
       - "docs/website/**"
