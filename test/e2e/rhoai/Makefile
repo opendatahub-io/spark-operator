@@ -47,19 +47,19 @@ kind-cleanup: ## Delete the Kind cluster and cleanup resources.
 .PHONY: e2e-rhoai-test
 e2e-rhoai-test: ## Run midstream RHOAI e2e tests (kustomize or preinstalled).
 	@echo "Running RHOAI e2e tests (install_method=$(INSTALL_METHOD))..."
-	cd $(REPO_ROOT) && INSTALL_METHOD=$(INSTALL_METHOD) SPARK_OPERATOR_IMAGE=$(SPARK_OPERATOR_IMAGE) \
-		go test ./test/e2e/rhoai/ -v -ginkgo.v -timeout 30m -coverprofile cover-e2e-rhoai.out
+	cd $(MAKEFILE_DIR) && INSTALL_METHOD=$(INSTALL_METHOD) SPARK_OPERATOR_IMAGE=$(SPARK_OPERATOR_IMAGE) \
+		go test ./... -v -ginkgo.v -timeout 30m -coverprofile $(REPO_ROOT)/cover-e2e-rhoai.out
 
 .PHONY: e2e-kueue-test
 e2e-kueue-test: ## Run Kueue integration tests (requires OpenShift + Kueue).
 	@echo "Running Kueue integration tests..."
-	cd $(REPO_ROOT) && go test -tags openshift ./test/e2e/rhoai/kueue/ -v -ginkgo.v -timeout 35m
+	cd $(MAKEFILE_DIR) && go test -tags openshift ./kueue/ -v -ginkgo.v -timeout 35m
 
 .PHONY: e2e-upstream-kustomize
 e2e-upstream-kustomize: ## Run upstream e2e tests with Kustomize install method.
 	@echo "Running upstream e2e tests with kustomize deploy..."
-	cd $(REPO_ROOT) && DEPLOY_METHOD=kustomize IMAGE_TAG=$(IMAGE_TAG) \
-		go test ./test/e2e/ -v -ginkgo.v -timeout 30m
+	cd $(REPO_ROOT)/test/e2e && DEPLOY_METHOD=kustomize IMAGE_TAG=$(IMAGE_TAG) \
+		go test ./... -v -ginkgo.v -timeout 30m
 
 .PHONY: test-all
 test-all: ## Run all e2e tests (upstream + midstream).

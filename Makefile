@@ -146,7 +146,7 @@ go-clean: ## Clean up caches and output.
 .PHONY: go-fmt
 go-fmt: ## Run go fmt against code.
 	@echo "Running go fmt..."
-	if [ -n "$(shell go fmt ./... && cd test/e2e && go fmt ./...)" ]; then \
+	if [ -n "$(shell go fmt ./... && cd test/e2e && go fmt ./... && cd rhoai && go fmt ./...)" ]; then \
 		echo "Go code is not formatted, need to run \"make go-fmt\" and commit the changes."; \
 		false; \
 	else \
@@ -158,18 +158,21 @@ go-vet: ## Run go vet against code.
 	@echo "Running go vet..."
 	go vet ./...
 	cd test/e2e && go vet ./...
+	cd test/e2e/rhoai && go vet ./...
 
 .PHONY: go-lint
 go-lint: golangci-lint ## Run golangci-lint linter.
 	@echo "Running golangci-lint run..."
 	$(GOLANGCI_LINT) run
 	cd test/e2e && $(GOLANGCI_LINT) run --config ../../.golangci.yaml
+	cd test/e2e/rhoai && $(GOLANGCI_LINT) run --config ../../../.golangci.yaml
 
 .PHONY: go-lint-fix
 go-lint-fix: golangci-lint ## Run golangci-lint linter and perform fixes.
 	@echo "Running golangci-lint run --fix..."
 	$(GOLANGCI_LINT) run --fix
 	cd test/e2e && $(GOLANGCI_LINT) run --fix --config ../../.golangci.yaml
+	cd test/e2e/rhoai && $(GOLANGCI_LINT) run --fix --config ../../../.golangci.yaml
 
 # Shell scripts to format and lint (all tracked *.sh files).
 SHELL_SCRIPTS = $(shell git ls-files '*.sh')

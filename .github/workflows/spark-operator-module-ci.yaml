@@ -160,9 +160,10 @@ jobs:
 
       - name: Run spark-operator E2E tests (preinstalled mode)
         run: |
+          cd test/e2e/rhoai && \
           INSTALL_METHOD=preinstalled \
           RELEASE_NAMESPACE=opendatahub \
-          go test ./test/e2e/rhoai/ -v -timeout 10m -count=1
+          go test ./... -v -timeout 10m -count=1
 
       - name: Debug - Show cluster state
         if: failure()
