@@ -21,6 +21,7 @@ func newConditionManager(sparkOperator *platformv1alpha1.SparkOperator) *conditi
 	return conditions.NewManager(sparkOperator,
 		string(common.ConditionTypeReady),
 		string(common.ConditionTypeProvisioningSucceeded),
+		string(common.ConditionTypeDegraded),
 		ConditionSparkOperatorReady,
 	)
 }
@@ -46,8 +47,16 @@ func (r *SparkOperatorModuleReconciler) updateComponentReadiness(ctx context.Con
 
 	if platformv1alpha1.GetManagementState(sparkOperator) == common.Removed {
 		condMgr.ClearCondition(ConditionSparkOperatorReady)
+		condMgr.ClearCondition(string(common.ConditionTypeDegraded))
 		return
 	}
+
+	// Degraded is a mandatory platform contract condition but Spark has no
+	// optional sub-components — both controller and webhook are core. If
+	// either is down it is a full outage (Ready=False), not a degraded state.
+	condMgr.MarkFalse(string(common.ConditionTypeDegraded),
+		conditions.WithReason("NotDegraded"),
+		conditions.WithSeverity(common.ConditionSeverityInfo))
 
 	ns := r.getApplicationsNamespace(ctx)
 	if err := checkSparkOperatorReadiness(ctx, r.Client, ns); err != nil {

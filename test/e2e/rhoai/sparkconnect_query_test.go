@@ -1,4 +1,4 @@
-package e2e_test
+package rhoai_test
 
 import (
 	"context"
@@ -25,7 +25,7 @@ import (
 var _ = Describe("SparkConnect Query", func() {
 	Context("Execute a query via Spark Connect", func() {
 		ctx := context.Background()
-		path := filepath.Join("examples", "spark-connect.yaml")
+		path := filepath.Join("..", "..", "..", "examples", "openshift", "manifests", "spark-connect.yaml")
 
 		var conn *v1alpha1.SparkConnect
 
@@ -41,8 +41,9 @@ var _ = Describe("SparkConnect Query", func() {
 			conn = &v1alpha1.SparkConnect{}
 			Expect(decoder.Decode(conn)).NotTo(HaveOccurred())
 			conn.Name = "spark-connect-query"
-			if conn.Namespace == "" {
-				conn.Namespace = TestNamespace
+			conn.Namespace = TestNamespace
+			if sparkAppImage != "" {
+				conn.Spec.Image = &sparkAppImage
 			}
 
 			By("Creating SparkConnect")

@@ -46,14 +46,13 @@ oc login
 
 **Option A — Using Make (recommended):**
 
-The Makefile provides a single command that installs the operator, verifies the deployment (pods ready, non-root UID, fsGroup != 185), and optionally cleans up. 
+After logging in to your OpenShift cluster, run the e2e tests which validate installation (pods ready, non-root UID, fsGroup != 185):
 
-Note: this keeps operator running for subsequent use.
 ```bash
-CLEANUP=false make -C examples/openshift operator-install
+INSTALL_METHOD=preinstalled make -C test/e2e/rhoai e2e-rhoai-test
 ```
 
-> This is the same command CI uses. If no cluster is detected, it will automatically create a local Kind cluster first.
+> For **local Kind** development, see the [Local Kind Testing](#local-kind-testing-quick-start) section below.
 
 **Option B — Manual Kustomize apply:**
 
@@ -74,7 +73,7 @@ This creates:
 
 #### 4. Verify Installation
 
-If you used `make operator-install`, verification is already done for you (the script checks pod readiness, non-root UID, and fsGroup). Otherwise, verify manually:
+If you ran the `e2e-rhoai-test` target, verification is already done for you (the tests check pod readiness, non-root UID, and fsGroup). Otherwise, verify manually:
 
 ```bash
 oc get pods -n spark-operator -l app.kubernetes.io/name=spark-operator
@@ -193,7 +192,7 @@ chmod +x examples/openshift/k8s/deploy.sh
 
 Upload your PDF files to the input PVC
 ```bash
-./examples/openshift/k8s/deploy.sh upload ./examples/openshift/tests/assets/
+./examples/openshift/k8s/deploy.sh upload ./examples/openshift/assets/
 ```
 **Note:** You can pass your own PDF directory path (e.g., `./path/to/your/pdfs/`)
 
@@ -356,9 +355,9 @@ oc port-forward -n spark-operator svc/docling-spark-job-ui-svc 4040:4040
 
 ## 7. Running E2E Tests with Make
 
-The `examples/openshift/Makefile` provides standardized targets that are the same commands CI runs. These work on both **OpenShift** and local **Kind** clusters.
+The `test/e2e/rhoai/Makefile` provides standardized targets that are the same commands CI runs. These work on both **OpenShift** and local **Kind** clusters.
 
-> **Tip:** Run `make help` from `examples/openshift/` to see all available targets and their descriptions.
+> **Tip:** Run `make help` from `test/e2e/rhoai/` to see all available targets and their descriptions.
 
 ### Available Make Targets
 
@@ -368,72 +367,58 @@ The `examples/openshift/Makefile` provides standardized targets that are the sam
 | `make kind-setup` | Create a local Kind cluster with namespace and PVCs |
 | `make kind-setup-full` | Same as above + pull the docling-spark image (~9.5GB) and upload test PDFs |
 | `make kind-cleanup` | Delete the Kind cluster and all resources |
-| `make operator-install` | Install the Spark operator (auto-creates a Kind cluster if none detected) |
-| `make test-spark-pi` | Run a lightweight Spark Pi test (auto-installs operator if needed) |
-| `make test-docling-spark` | Run the Docling Spark document conversion test |
-| `make e2e-kustomize-test` | Run Go e2e tests with Kustomize-based operator installation |
-| `make test-all` | Run all shell tests in sequence (operator-install, spark-pi, docling) |
+| `make e2e-rhoai-test` | Run midstream Go e2e tests (operator install, Spark UI, metrics, etc.) |
+| `make e2e-kueue-test` | Run Kueue integration tests (requires Kueue installed) |
+| `make e2e-upstream-kustomize` | Run upstream e2e tests with Kustomize install method |
+| `make test-all` | Run all e2e tests (upstream + midstream) |
 
 ### Local Kind Testing (Quick Start)
 
 If you don't have an OpenShift cluster, you can run the full test suite locally with just Docker and `kind` installed:
 
 ```bash
-cd examples/openshift
+cd test/e2e/rhoai
 
 # Option 1: Run everything in one command
 make test-all
 
 # Option 2: Step by step
-make kind-setup                       # Create Kind cluster
-CLEANUP=false make operator-install   # Install operator (keep it running)
-CLEANUP=false make test-spark-pi      # Run Spark Pi test
-make test-docling-spark               # Run Docling Spark test
-make kind-cleanup                     # Tear down
+make kind-setup                                              # Create Kind cluster
+INSTALL_METHOD=kustomize make e2e-rhoai-test                 # Run midstream tests
+make e2e-upstream-kustomize                                  # Run upstream tests
+make kind-cleanup                                            # Tear down
 ```
-
-> **Auto-detection:** `make operator-install` detects whether a cluster is already running. On OpenShift it uses the existing cluster; without one it creates a Kind cluster automatically.
-
-> **Auto-dependency:** `make test-spark-pi` and `make test-docling-spark` automatically install the operator if it isn't present, so you can jump straight to a test target.
 
 ### Configuration
 
-All test targets support the `CLEANUP` environment variable. Set `CLEANUP=false` to preserve resources between test runs (useful for debugging or chaining tests):
-
-```bash
-CLEANUP=false make test-spark-pi
-```
-
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `CLEANUP` | `true` | Set to `false` to preserve resources after tests |
 | `KIND_CLUSTER_NAME` | `spark-operator` | Name of the Kind cluster |
 | `K8S_VERSION` | `v1.32.0` | Kubernetes version for Kind |
-| `TIMEOUT_SECONDS` | `600` | Max wait time for shell test completion |
-| `INSTALL_METHOD` | `helm` | For Go e2e tests: set to `kustomize` to use Kustomize manifests |
-| `SPARK_OPERATOR_IMAGE` | *(uses `params.env` default)* | For Go e2e tests: overrides operator image in `config/default/params.env`. Set to the locally built image for development/CI. |
+| `INSTALL_METHOD` | `kustomize` | How to deploy the operator: `helm`, `kustomize`, or `preinstalled` |
+| `SPARK_OPERATOR_IMAGE` | *(uses `params.env` default)* | Overrides operator image. Set to the locally built image for development/CI. |
+| `IMAGE_TAG` | — | Tag for upstream e2e tests (`e2e-upstream-kustomize`) |
 
 ### Go E2E Tests with Kustomize
 
-In addition to the shell-based tests above, the `e2e-kustomize-test` target runs the full upstream Go/Ginkgo e2e test suite using Kustomize manifests for operator installation instead of Helm. This builds the operator image from source and validates the current code.
+The `e2e-rhoai-test` target runs the midstream Go/Ginkgo e2e tests located in `test/e2e/rhoai/`. These validate operator installation, Spark UI access, Prometheus metrics, SparkConnect, and docling workloads.
 
 ```bash
 # From the repo root: build operator, create Kind cluster, and load image
 make kind-load-image IMAGE_TAG=local
 
-# Run the Go e2e tests with the locally built image
+# Run the midstream e2e tests with the locally built image
 SPARK_OPERATOR_IMAGE=ghcr.io/kubeflow/spark-operator/controller:local \
-  make -C examples/openshift e2e-kustomize-test
+INSTALL_METHOD=kustomize \
+  make -C test/e2e/rhoai e2e-rhoai-test
 ```
-
-> **Detailed testing guide:** See [tests/README.md](./tests/README.md) for full documentation on individual test scripts, Go e2e tests, environment variables, architecture diagrams, and CI integration examples.
 
 ## 8. Cleanup
 
 ### Using Make (recommended for Kind clusters)
 
 ```bash
-make -C examples/openshift kind-cleanup
+make -C test/e2e/rhoai kind-cleanup
 ```
 
 ### Manual Cleanup (OpenShift)

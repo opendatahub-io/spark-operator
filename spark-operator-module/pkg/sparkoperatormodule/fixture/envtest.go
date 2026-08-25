@@ -2,6 +2,7 @@ package fixture
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
 	runtimepkg "runtime"
@@ -116,6 +117,11 @@ func ProjectRoot() string {
 	}
 }
 
+const (
+	TestReleaseName    = "Spark Operator"
+	TestReleaseVersion = "v2.4.0"
+)
+
 func WriteMinimalManifests(workDir string) {
 	manifest := `apiVersion: v1
 kind: ConfigMap
@@ -125,11 +131,11 @@ metadata:
 data:
   test: "true"
 `
-	componentMetadata := `releases:
-  - name: Spark Operator
-    version: v2.4.0
+	componentMetadata := fmt.Sprintf(`releases:
+  - name: %s
+    version: %s
     repoUrl: https://github.com/opendatahub-io/spark-operator
-`
+`, TestReleaseName, TestReleaseVersion)
 	overlayDir := filepath.Join(workDir, sparkoperatormodule.SparkOperatorComponentName, sparkoperatormodule.SparkOperatorManifestSourcePathODH)
 	writeKustomizeDir(overlayDir, manifest)
 	gomega.Expect(os.WriteFile(

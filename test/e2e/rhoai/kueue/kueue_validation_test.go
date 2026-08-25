@@ -679,25 +679,6 @@ func filterKueueEvents(events []corev1.Event) []corev1.Event {
 	return kueueEvents
 }
 
-func findWorkloadForApp(ctx context.Context, appName string) *unstructured.Unstructured {
-	wlList := &unstructured.UnstructuredList{}
-	wlList.SetGroupVersionKind(schema.GroupVersionKind{
-		Group:   "kueue.x-k8s.io",
-		Version: "v1beta2",
-		Kind:    "WorkloadList",
-	})
-	if err := k8sClient.List(ctx, wlList, client.InNamespace(KueueTestNamespace)); err != nil {
-		return nil
-	}
-	for i := range wlList.Items {
-		wl := &wlList.Items[i]
-		if strings.HasPrefix(wl.GetName(), "sparkapplication-"+appName) {
-			return wl
-		}
-	}
-	return nil
-}
-
 func isWorkloadConditionTrue(wl *unstructured.Unstructured, conditionType string) bool {
 	conditions, _, _ := unstructured.NestedSlice(wl.Object, "status", "conditions")
 	for _, c := range conditions {

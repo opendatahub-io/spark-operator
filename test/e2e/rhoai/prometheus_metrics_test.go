@@ -14,7 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package e2e_test
+package rhoai_test
 
 import (
 	"context"
@@ -38,7 +38,7 @@ import (
 var _ = Describe("Prometheus Metrics", func() {
 	Context("Controller metrics endpoint", func() {
 		ctx := context.Background()
-		path := filepath.Join("examples", "spark-pi.yaml")
+		path := filepath.Join("..", "..", "..", "examples", "openshift", "manifests", "spark-pi.yaml")
 
 		var app *v1beta2.SparkApplication
 
@@ -55,9 +55,8 @@ var _ = Describe("Prometheus Metrics", func() {
 			app = &v1beta2.SparkApplication{}
 			Expect(decoder.Decode(app)).NotTo(HaveOccurred())
 			app.Name = "spark-pi-metrics-test"
-			if app.Namespace == "" {
-				app.Namespace = TestNamespace
-			}
+			app.Namespace = TestNamespace
+			overrideSparkAppImage(app)
 		})
 
 		AfterEach(func() {
@@ -134,6 +133,12 @@ var _ = Describe("Prometheus Metrics", func() {
 			Expect(metricsOutput).To(ContainSubstring("# TYPE"))
 			Expect(metricsOutput).To(ContainSubstring("go_goroutines"))
 			Expect(metricsOutput).To(ContainSubstring("process_cpu_seconds_total"))
+
+			By("Cleaning up any stale driver pod from a previous run")
+			staleDriver := &corev1.Pod{}
+			staleDriver.Name = app.Name + "-driver"
+			staleDriver.Namespace = app.Namespace
+			_ = k8sClient.Delete(ctx, staleDriver)
 
 			By("Creating SparkApplication to exercise the metrics pipeline")
 			Expect(k8sClient.Create(ctx, app)).To(Succeed())

@@ -18,7 +18,8 @@ pkg/                  # Public packages (certificate, client, common, features, 
 config/               # Kustomize manifests for non-Helm (kustomize) install workflow (see below)
 charts/spark-operator-chart/  # Helm chart (templates, values, CRDs, unit tests)
 test/e2e/             # E2E tests (Helm install workflow) - Ginkgo suite
-examples/openshift/   # OpenShift deployment + integration tests (Kustomize install workflow)
+test/e2e/rhoai/       # Midstream-only RHOAI E2E tests (Kustomize install workflow)
+examples/openshift/   # OpenShift deployment examples, Dockerfiles, manifests, and scripts
 hack/                 # Code generation scripts
 ```
 
@@ -88,18 +89,16 @@ make e2e-test             # Run Ginkgo e2e tests
 ```
 Uses Ginkgo BDD framework. Suite installs operator via Helm chart. Generates `cover-e2e.out`. See `test/e2e/suite_test.go`.
 
-### Integration Tests - Kustomize workflow (examples/openshift/tests/)
+### RHOAI E2E Tests - Kustomize workflow (test/e2e/rhoai/)
 ```bash
-cd examples/openshift
-make kind-setup           # Create KIND cluster + namespaces
-make operator-install     # Install via Kustomize
-make test-all             # Run all integration tests
-make kind-cleanup         # Teardown
+cd test/e2e/rhoai
+make kind-setup              # Create KIND cluster + namespaces
+make e2e-rhoai-test          # Run all RHOAI e2e tests (Go/Ginkgo)
+make e2e-kueue-test          # Run Kueue integration tests
+make kind-cleanup            # Teardown
 ```
-Shell-script based tests: `test-operator-install.sh`, `test-spark-pi.sh`, `test-docling-spark.sh`.
-Env vars: `CLEANUP=true`, `KIND_CLUSTER_NAME=spark-operator`, `TIMEOUT_SECONDS=600`.
-
-> **Note:** The team plans to consolidate tests under `test/` once upstream parity is achieved.
+Go/Ginkgo tests covering operator install validation, Spark UI, Prometheus metrics, ScheduledSparkApplication, SparkConnect, and docling workloads.
+Env vars: `INSTALL_METHOD`, `SPARK_OPERATOR_IMAGE`, `KIND_CLUSTER_NAME=spark-operator`.
 
 ### Helm Chart Tests
 ```bash
@@ -139,13 +138,13 @@ Config: `.golangci.yaml`
 - `cmd/operator/main.go` - Operator entrypoint
 - `charts/spark-operator-chart/values.yaml` - Helm default values
 - `config/default/kustomization.yaml` - Default Kustomize overlay
-- `VERSION` - Current version (v2.3.0)
+- `VERSION` - Current version (v2.5.0-rc.0)
 
 ## CI
 
 GitHub Actions (`.github/workflows/`):
 - `integration.yaml` - code-check, unit-test, helm-test, e2e on KIND
-- `openshift-spark-pi-e2e.yaml` / `openshift-docling-e2e.yaml` - OpenShift integration tests
+- `midstream-e2e.yaml` - Midstream RHOAI e2e tests
 - `release.yaml` - Release builds and publishes
 - Coverage uploaded to Codecov with separate flags: `unit` and `e2e` (see `.codecov.yml`)
 

@@ -61,6 +61,6 @@ RUN mkdir -p /app/assets /app/output /app/scripts /home/spark && \
     chmod -R 775 /app/output /home/spark
 
 # Copy application code ONLY (no data files - they come from PVC)
-COPY scripts/ /app/scripts/
+COPY app/ /app/scripts/
 RUN chgrp -R 0 /app/scripts && \
     chmod -R g=u /app/scripts

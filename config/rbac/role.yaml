@@ -53,14 +53,6 @@ rules:
   verbs:
   - get
 - apiGroups:
-  - config.openshift.io
-  resourceNames:
-  - cluster
-  resources:
-  - apiservers
-  verbs:
-  - get
-- apiGroups:
   - extensions
   - networking.k8s.io
   resources:
@@ -93,12 +85,6 @@ rules:
   - sparkoperator.k8s.io
   resources:
   - scheduledsparkapplications/finalizers
-  verbs:
-  - patch
-  - update
-- apiGroups:
-  - sparkoperator.k8s.io
-  resources:
   - scheduledsparkapplications/status
   - sparkapplications/finalizers
   - sparkapplications/status
