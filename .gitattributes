@@ -1,0 +1,6 @@
+# Protect midstream-only files during upstream sync merges.
+# The 'merge=ours' driver keeps the midstream version when conflicts arise,
+# preventing -X theirs from overwriting OpenShift-specific content.
+.tekton/** merge=ours
+examples/openshift/** merge=ours
+config/overlays/** merge=ours
