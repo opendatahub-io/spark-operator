@@ -6,6 +6,7 @@ import (
 	"crypto/ecdsa"
 	"crypto/elliptic"
 	"crypto/rand"
+	"crypto/tls"
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"encoding/json"
@@ -478,6 +479,58 @@ func TestBuildTransport_WhitespacePathsIgnored(t *testing.T) {
 	})
 	assert.NoError(t, err)
 	assert.NotNil(t, transport)
+}
+
+func TestBuildTransport_AppliesTLSOptsThenMTLS(t *testing.T) {
+	certFile, keyFile, caFile := generateTestCertFiles(t)
+	transport, err := buildTransport(&TLSConfig{
+		Enabled:    true,
+		CertFile:   certFile,
+		KeyFile:    keyFile,
+		CACertFile: caFile,
+	}, func(c *tls.Config) {
+		c.MinVersion = tls.VersionTLS13
+		c.CipherSuites = []uint16{tls.TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256}
+	})
+	require.NoError(t, err)
+
+	cfg := tlsClientConfig(t, transport)
+	assert.Equal(t, uint16(tls.VersionTLS13), cfg.MinVersion)
+	assert.Equal(t, []uint16{tls.TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256}, cfg.CipherSuites)
+	assert.NotNil(t, cfg.RootCAs)
+	assert.Len(t, cfg.Certificates, 1)
+}
+
+func TestBuildTransport_TLSOptsWithoutMTLS(t *testing.T) {
+	transport, err := buildTransport(nil, func(c *tls.Config) {
+		c.MinVersion = tls.VersionTLS13
+	})
+	require.NoError(t, err)
+
+	cfg := tlsClientConfig(t, transport)
+	assert.Equal(t, uint16(tls.VersionTLS13), cfg.MinVersion)
+	assert.Empty(t, cfg.Certificates)
+}
+
+func TestNewRestSparkSubmitter_AppliesTLSOpts(t *testing.T) {
+	s, err := NewRestSparkSubmitter(RestSparkSubmitterConfig{
+		URL: "https://submitter.example:443",
+		TLSOpts: []func(*tls.Config){func(c *tls.Config) {
+			c.MinVersion = tls.VersionTLS13
+		}},
+	})
+	require.NoError(t, err)
+
+	cfg := tlsClientConfig(t, s.httpClient.Transport)
+	assert.Equal(t, uint16(tls.VersionTLS13), cfg.MinVersion)
+}
+
+func tlsClientConfig(t *testing.T, rt http.RoundTripper) *tls.Config {
+	t.Helper()
+	tr, ok := rt.(*http.Transport)
+	require.True(t, ok)
+	require.NotNil(t, tr.TLSClientConfig)
+	return tr.TLSClientConfig
 }
 
 // --- TLS test helpers ---
