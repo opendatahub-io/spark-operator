@@ -56,3 +56,10 @@ jobs:
       k8s_version: v1.32.0
       arch: ${{ matrix.arch }}
       runner: ${{ matrix.arch == 'arm64' && 'ubuntu-24.04-arm' || 'ubuntu-latest' }}
+
+  notify-on-failure:
+    if: always() && github.event_name == 'schedule' && contains(needs.*.result, 'failure')
+    needs: [run]
+    uses: ./.github/workflows/_notify-on-failure.yaml
+    secrets:
+      SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}

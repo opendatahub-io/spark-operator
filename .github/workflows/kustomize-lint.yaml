@@ -49,3 +49,10 @@ jobs:
 
       - name: Validate Kustomize build
         run: make kustomize-lint
+
+  notify-on-failure:
+    if: always() && github.event_name == 'schedule' && contains(needs.*.result, 'failure')
+    needs: [kustomize-lint]
+    uses: ./.github/workflows/_notify-on-failure.yaml
+    secrets:
+      SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}

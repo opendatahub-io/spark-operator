@@ -113,3 +113,10 @@ jobs:
           echo ""
           echo "=== Operator logs ==="
           kubectl logs -n spark-operator -l app.kubernetes.io/name=spark-operator --tail=100 2>/dev/null || echo "No operator logs"
+
+  notify-on-failure:
+    if: always() && github.event_name == 'schedule' && contains(needs.*.result, 'failure')
+    needs: [midstream-e2e-test]
+    uses: ./.github/workflows/_notify-on-failure.yaml
+    secrets:
+      SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}

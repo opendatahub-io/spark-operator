@@ -1,0 +1,21 @@
+name: Notify on CI Failure
+
+on:
+  workflow_call:
+    secrets:
+      SLACK_WEBHOOK_URL:
+        required: true
+
+jobs:
+  notify:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Send Slack notification
+        uses: slackapi/slack-github-action@v2.1.0
+        with:
+          webhook: ${{ secrets.SLACK_WEBHOOK_URL }}
+          webhook-type: incoming-webhook
+          payload: |
+            {
+              "text": "❌ Scheduled CI failed: *${{ github.workflow }}*\n<${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}|View run>"
+            }
