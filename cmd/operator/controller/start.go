@@ -373,7 +373,7 @@ func start() {
 
 	ctx := operatortls.SetupProfileWatcherRestart(ctrl.SetupSignalHandler(), mgr, profileResult)
 
-	sparkSubmitter, err := newSparkSubmitter(ctx)
+	sparkSubmitter, err := newSparkSubmitter(ctx, tlsOptions)
 	if err != nil {
 		logger.Error(err, "Failed to create spark submitter")
 		os.Exit(1)
@@ -560,7 +560,7 @@ func newSparkConnectReconcilerOptions() sparkconnect.Options {
 	return options
 }
 
-func newSparkSubmitter(ctx context.Context) (sparkapplication.SparkApplicationSubmitter, error) {
+func newSparkSubmitter(ctx context.Context, tlsOpts []func(*tls.Config)) (sparkapplication.SparkApplicationSubmitter, error) {
 	if !features.Enabled(features.RestSubmitter) {
 		return &sparkapplication.SparkSubmitter{}, nil
 	}
@@ -581,6 +581,7 @@ func newSparkSubmitter(ctx context.Context) (sparkapplication.SparkApplicationSu
 		RequestTimeout:  submitterRequestTimeout,
 		InitialBackoff:  submitterInitialBackoff,
 		TLS:             tlsCfg,
+		TLSOpts:         tlsOpts,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to initialize RestSubmitter: %w", err)

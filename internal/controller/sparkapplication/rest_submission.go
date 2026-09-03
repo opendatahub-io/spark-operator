@@ -186,6 +186,7 @@ type RestSparkSubmitterConfig struct {
 	RequestTimeout  time.Duration
 	InitialBackoff  time.Duration
 	TLS             *TLSConfig
+	TLSOpts         []func(*tls.Config)
 }
 
 // RestSparkSubmitter submits a SparkApplication via the REST submitter service.
@@ -245,7 +246,7 @@ func NewRestSparkSubmitter(cfg RestSparkSubmitterConfig) (*RestSparkSubmitter, e
 		return nil, fmt.Errorf("submitter URL %q must include an explicit port", cfg.URL)
 	}
 
-	transport, err := buildTransport(cfg.TLS)
+	transport, err := buildTransport(cfg.TLS, cfg.TLSOpts...)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create transport: %w", err)
 	}
@@ -429,20 +430,35 @@ func parseSubmitResponse(resp *http.Response) (*submitResponse, error) {
 
 // --- TLS transport ---
 
-// buildTransport creates an HTTP transport, optionally with TLS configured.
-func buildTransport(tlsCfg *TLSConfig) (http.RoundTripper, error) {
+// buildTransport creates an HTTP transport. Cluster TLSOpts are applied first so
+// the REST client honors the APIServer profile; mTLS files are layered on top.
+func buildTransport(tlsCfg *TLSConfig, tlsOpts ...func(*tls.Config)) (http.RoundTripper, error) {
 	transport := &http.Transport{
 		MaxIdleConns:        maxIdleConns,
 		MaxIdleConnsPerHost: maxIdleConnsPerHost,
 		IdleConnTimeout:     idleConnTimeout,
 	}
 
-	if tlsCfg == nil || !tlsCfg.Enabled {
+	if (tlsCfg == nil || !tlsCfg.Enabled) && len(tlsOpts) == 0 {
 		return transport, nil
 	}
 
 	tlsConfig := &tls.Config{MinVersion: tls.VersionTLS12}
+	for _, opt := range tlsOpts {
+		opt(tlsConfig)
+	}
 
+	if tlsCfg != nil && tlsCfg.Enabled {
+		if err := applySubmitterCertificates(tlsConfig, tlsCfg); err != nil {
+			return nil, err
+		}
+	}
+
+	transport.TLSClientConfig = tlsConfig
+	return transport, nil
+}
+
+func applySubmitterCertificates(tlsConfig *tls.Config, tlsCfg *TLSConfig) error {
 	caCertFile := strings.TrimSpace(tlsCfg.CACertFile)
 	certFile := strings.TrimSpace(tlsCfg.CertFile)
 	keyFile := strings.TrimSpace(tlsCfg.KeyFile)
@@ -450,30 +466,29 @@ func buildTransport(tlsCfg *TLSConfig) (http.RoundTripper, error) {
 	if caCertFile != "" {
 		caCert, err := os.ReadFile(caCertFile)
 		if err != nil {
-			return nil, fmt.Errorf("failed to read CA cert file %q: %w", caCertFile, err)
+			return fmt.Errorf("failed to read CA cert file %q: %w", caCertFile, err)
 		}
 		pool := x509.NewCertPool()
 		if !pool.AppendCertsFromPEM(caCert) {
-			return nil, fmt.Errorf("failed to parse CA cert from %q", caCertFile)
+			return fmt.Errorf("failed to parse CA cert from %q", caCertFile)
 		}
 		tlsConfig.RootCAs = pool
 	}
 
 	if (certFile != "") != (keyFile != "") {
-		return nil, fmt.Errorf("both tls.crt and tls.key must be present in the TLS cert directory, got cert=%q key=%q", certFile, keyFile)
+		return fmt.Errorf("both tls.crt and tls.key must be present in the TLS cert directory, got cert=%q key=%q", certFile, keyFile)
 	}
 
 	if certFile != "" && keyFile != "" {
 		cert, err := tls.LoadX509KeyPair(certFile, keyFile)
 		if err != nil {
-			return nil, fmt.Errorf("failed to load client certificate %q / %q: %w", certFile, keyFile, err)
+			return fmt.Errorf("failed to load client certificate %q / %q: %w", certFile, keyFile, err)
 		}
 		tlsConfig.Certificates = []tls.Certificate{cert}
 		restLogger.Info("TLS enabled with client certificate (mTLS)", "certFile", certFile, "keyFile", keyFile)
-	} else {
-		restLogger.Info("TLS enabled (server verification only)", "caCertFile", caCertFile)
+		return nil
 	}
 
-	transport.TLSClientConfig = tlsConfig
-	return transport, nil
+	restLogger.Info("TLS enabled (server verification only)", "caCertFile", caCertFile)
+	return nil
 }
