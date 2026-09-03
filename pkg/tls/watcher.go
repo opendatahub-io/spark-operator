@@ -18,6 +18,7 @@ package tls
 
 import (
 	"context"
+	"fmt"
 	"reflect"
 	"time"
 
@@ -105,9 +106,9 @@ func boolPtr(b bool) *bool { return &b }
 // so that controller and webhook entry points share a single contract.
 // Returns a cancellable context: if the TLS profile changes at runtime, the
 // context is cancelled, causing the manager to shut down for restart.
-func SetupProfileWatcherRestart(ctx context.Context, mgr ctrl.Manager, result FetchResult) context.Context {
+func SetupProfileWatcherRestart(ctx context.Context, mgr ctrl.Manager, result FetchResult) (context.Context, error) {
 	if !result.APIAvailable {
-		return ctx
+		return ctx, nil
 	}
 	ctx, cancel := context.WithCancel(ctx)
 	watcher := NewProfileWatcher(mgr.GetClient(), result.RawSpec, func() {
@@ -115,7 +116,8 @@ func SetupProfileWatcherRestart(ctx context.Context, mgr ctrl.Manager, result Fe
 		cancel()
 	})
 	if err := watcher.SetupWithManager(mgr); err != nil {
-		watcherLog.Error(err, "Failed to set up TLS security profile watcher; profile changes will not trigger a restart")
+		cancel()
+		return ctx, fmt.Errorf("unable to set up TLS security profile watcher: %w", err)
 	}
-	return ctx
+	return ctx, nil
 }
