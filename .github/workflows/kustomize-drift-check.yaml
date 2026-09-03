@@ -53,3 +53,10 @@ jobs:
 
       - name: Run drift detection
         run: make drift-check
+
+  notify-on-failure:
+    if: always() && github.event_name == 'schedule' && contains(needs.*.result, 'failure')
+    needs: [drift-check]
+    uses: ./.github/workflows/_notify-on-failure.yaml
+    secrets:
+      SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}

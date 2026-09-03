@@ -13,3 +13,10 @@ jobs:
     uses: opendatahub-io/disconnected-readiness-scorer/.github/workflows/disconnected-readiness-check.yml@v1
     with:
       rules: ""
+
+  notify-on-failure:
+    if: always() && github.event_name == 'schedule' && contains(needs.*.result, 'failure')
+    needs: [check]
+    uses: ./.github/workflows/_notify-on-failure.yaml
+    secrets:
+      SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}

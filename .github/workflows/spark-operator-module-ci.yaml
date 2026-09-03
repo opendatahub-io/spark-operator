@@ -196,3 +196,10 @@ jobs:
           echo "=== Spark operator webhook logs ==="
           kubectl logs -n opendatahub deployment/spark-operator-webhook \
             --tail=200 2>/dev/null || true
+
+  notify-on-failure:
+    if: always() && github.event_name == 'schedule' && contains(needs.*.result, 'failure')
+    needs: [precommit-check-som, e2e-module-operator]
+    uses: ./.github/workflows/_notify-on-failure.yaml
+    secrets:
+      SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}

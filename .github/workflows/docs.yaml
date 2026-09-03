@@ -69,3 +69,10 @@ jobs:
       - name: Check links
         # Informational only — a broken link is reported but never fails the check.
         run: uv run --group docs sphinx-build -b linkcheck . _build/linkcheck || true
+
+  notify-on-failure:
+    if: always() && github.event_name == 'schedule' && contains(needs.*.result, 'failure')
+    needs: [build, linkcheck]
+    uses: ./.github/workflows/_notify-on-failure.yaml
+    secrets:
+      SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
