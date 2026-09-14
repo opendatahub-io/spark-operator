@@ -133,12 +133,7 @@ jobs:
       - name: Determine branch name
         id: get_branch
         run: |
-          BRANCH=""
-          if [ "${{ github.event_name }}" == "push" ]; then
-            BRANCH=${GITHUB_REF_NAME}
-          elif [ "${{ github.event_name }}" == "pull_request" ]; then
-            BRANCH=${GITHUB_BASE_REF}
-          fi
+          BRANCH="${GITHUB_BASE_REF:-$GITHUB_REF_NAME}"
           echo "Branch name: $BRANCH"
           echo "BRANCH=$BRANCH" >> "$GITHUB_OUTPUT"
 
@@ -182,7 +177,7 @@ jobs:
         env:
           BRANCH: ${{ steps.get_branch.outputs.BRANCH }}
         run: |
-          changed=$(ct list-changed --target-branch $BRANCH)
+          changed=$(ct list-changed --target-branch "$BRANCH")
           if [[ -n "$changed" ]]; then
             echo "changed=true" >> "$GITHUB_OUTPUT"
           fi
@@ -191,7 +186,7 @@ jobs:
         if: steps.list-changed.outputs.changed == 'true'
         env:
           BRANCH: ${{ steps.get_branch.outputs.BRANCH }}
-        run: ct lint --check-version-increment=false --target-branch $BRANCH
+        run: ct lint --check-version-increment=false --target-branch "$BRANCH"
 
       - name: Produce the helm documentation
         if: steps.list-changed.outputs.changed == 'true'
