@@ -9,6 +9,8 @@ on:
 jobs:
   notify:
     runs-on: ubuntu-latest
+    permissions:
+      issues: write
     steps:
       - name: Send Slack notification
         uses: slackapi/slack-github-action@v2.1.0
@@ -19,3 +21,38 @@ jobs:
             {
               "text": "❌ Scheduled CI failed: *${{ github.workflow }}*\n<${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}|View run>"
             }
+
+      - name: Create or update GitHub issue
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          WORKFLOW_NAME: ${{ github.workflow }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          ISSUE_TITLE="Scheduled CI failure: ${WORKFLOW_NAME}"
+          LABEL="scheduled-ci-failure"
+
+          # Ensure the label exists
+          gh label create "$LABEL" --description "Automated: weekly scheduled CI failure" --color "B60205" 2>/dev/null || true
+
+          EXISTING_ISSUE=$(gh issue list \
+            --label "$LABEL" \
+            --state open \
+            --search "in:title ${WORKFLOW_NAME}" \
+            --json number,title \
+            --jq ".[] | select(.title == \"${ISSUE_TITLE}\") | .number" \
+            | head -1)
+
+          if [ -n "$EXISTING_ISSUE" ]; then
+            gh issue comment "$EXISTING_ISSUE" \
+              --body "Still failing as of $(date -u +%Y-%m-%d): [View run](${RUN_URL})"
+          else
+            gh issue create \
+              --title "${ISSUE_TITLE}" \
+              --label "$LABEL" \
+              --body "The **${WORKFLOW_NAME}** workflow failed during its scheduled weekly run.
+
+          **Failed run:** ${RUN_URL}
+
+          This issue was automatically created. It will receive comments on subsequent failures until it is closed."
+          fi

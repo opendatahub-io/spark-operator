@@ -260,6 +260,8 @@ jobs:
   notify-on-failure:
     if: always() && github.event_name == 'schedule' && contains(needs.*.result, 'failure')
     needs: [code-check, build-api-docs, build-spark-operator, build-helm-chart, e2e-test]
+    permissions:
+      issues: write
     uses: ./.github/workflows/_notify-on-failure.yaml
     secrets:
       SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
