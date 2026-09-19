@@ -1,0 +1,235 @@
+name: Upstream Sync
+
+# This workflow syncs upstream kubeflow/spark-operator changes into the midstream repository.
+# It uses a GitHub App for authentication so that PRs created by this workflow trigger CI checks.
+#
+# Required GitHub App permissions:
+#   - Contents: Read and write
+#   - Pull requests: Read and write
+#   - Metadata: Read-only (automatically included)
+#
+# Required secrets (configured in repository settings):
+#   - ODH_DEVOPS_APP_ID: GitHub App ID
+#   - ODH_DEVOPS_APP_PRIVATE_KEY: GitHub App private key (PEM format)
+#   - SLACK_WEBHOOK: Slack webhook URL for failure notifications (optional)
+
+on:
+  # Run every Wednesday at 9:00 AM UTC (as documented in SYNC-STRATEGY.md)
+  schedule:
+    - cron: '0 9 * * 3'
+
+  # Allow manual triggering
+  workflow_dispatch:
+    inputs:
+      conflict_resolution:
+        description: 'How to resolve conflicts'
+        required: false
+        type: choice
+        default: 'theirs'
+        options:
+          - theirs  # Upstream wins (default)
+          - ours    # Midstream wins
+      create_pr:
+        description: 'Create PR after sync'
+        required: false
+        type: boolean
+        default: true
+
+permissions:
+  contents: write
+  pull-requests: write
+
+env:
+  UPSTREAM_REPO: 'https://github.com/kubeflow/spark-operator'
+  UPSTREAM_BRANCH: 'master'
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Generate GitHub App token
+        id: app-token
+        uses: getsentry/action-github-app-token@v2
+        with:
+          app_id: ${{ secrets.ODH_DEVOPS_APP_ID }}
+          private_key: ${{ secrets.ODH_DEVOPS_APP_PRIVATE_KEY }}
+
+      - name: Checkout midstream repository
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0  # Full history for merge
+          token: ${{ steps.app-token.outputs.token }}
+
+      - name: Configure Git
+        run: |
+          git config user.name "opendatahub-bot[bot]"
+          git config user.email "opendatahub-bot[bot]@users.noreply.github.com"
+
+          # Register the 'ours' merge driver so .gitattributes merge=ours works.
+          # This keeps midstream-only files (.tekton/*, examples/openshift/*, config/overlays/*)
+          # from being overwritten during the upstream merge.
+          git config merge.ours.driver true
+
+      - name: Verify upstream remote
+        id: verify-upstream
+        run: |
+          if git remote get-url upstream >/dev/null 2>&1; then
+            CURRENT_URL=$(git remote get-url upstream)
+            if [[ "$CURRENT_URL" != "$UPSTREAM_REPO" ]]; then
+              echo "Error: upstream remote points to '$CURRENT_URL', expected '$UPSTREAM_REPO'"
+              exit 1
+            fi
+            echo "Upstream remote verified: $CURRENT_URL"
+          else
+            echo "Adding upstream remote: $UPSTREAM_REPO"
+            git remote add upstream "$UPSTREAM_REPO"
+          fi
+          git fetch upstream
+
+      - name: Check if sync is needed
+        id: check-sync
+        run: |
+          # Check if upstream has commits not yet in main
+          if git merge-base --is-ancestor "upstream/$UPSTREAM_BRANCH" HEAD; then
+            echo "Already up to date with upstream/$UPSTREAM_BRANCH — nothing to sync."
+            echo "sync_needed=false" >> "$GITHUB_OUTPUT"
+          else
+            UPSTREAM_AHEAD=$(git rev-list --count HEAD.."upstream/$UPSTREAM_BRANCH")
+            echo "Upstream is $UPSTREAM_AHEAD commit(s) ahead — sync needed."
+            echo "sync_needed=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Create sync branch
+        if: steps.check-sync.outputs.sync_needed == 'true'
+        id: branch
+        run: |
+          SYNC_DATE=$(date +%Y-%m-%d)
+          BRANCH_NAME="upstream-sync-${SYNC_DATE}"
+          echo "branch_name=$BRANCH_NAME" >> "$GITHUB_OUTPUT"
+          echo "sync_date=$SYNC_DATE" >> "$GITHUB_OUTPUT"
+
+          # Ensure we're on a clean main
+          git checkout -B main origin/main
+          git reset --hard origin/main
+
+          # Create sync branch
+          git checkout -b "$BRANCH_NAME"
+
+      - name: Merge upstream changes
+        if: steps.check-sync.outputs.sync_needed == 'true'
+        id: merge
+        run: |
+          STRATEGY="${{ github.event.inputs.conflict_resolution || 'theirs' }}"
+          echo "Using merge strategy: -X $STRATEGY"
+
+          if git merge "upstream/$UPSTREAM_BRANCH" -X "$STRATEGY" --no-edit; then
+            echo "merge_status=success" >> "$GITHUB_OUTPUT"
+            echo "Merge completed successfully"
+          else
+            echo "merge_status=conflicts" >> "$GITHUB_OUTPUT"
+            echo "Merge conflicts detected"
+            git merge --abort
+            exit 1
+          fi
+
+      - name: Push sync branch
+        if: |
+          steps.check-sync.outputs.sync_needed == 'true' &&
+          steps.merge.outputs.merge_status == 'success'
+        run: |
+          git push origin "${{ steps.branch.outputs.branch_name }}"
+
+      - name: Create Pull Request
+        if: |
+          steps.check-sync.outputs.sync_needed == 'true' &&
+          steps.merge.outputs.merge_status == 'success' &&
+          (github.event.inputs.create_pr != 'false')
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ steps.app-token.outputs.token }}
+          script: |
+            const strategy = '${{ github.event.inputs.conflict_resolution || 'theirs' }}';
+            const { data: pr } = await github.rest.pulls.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title: 'Upstream sync ${{ steps.branch.outputs.sync_date }}',
+              head: '${{ steps.branch.outputs.branch_name }}',
+              base: 'main',
+              body: `## Automated Upstream Sync
+
+            **Upstream Repository:** ${process.env.UPSTREAM_REPO}
+            **Upstream Branch:** ${process.env.UPSTREAM_BRANCH}
+            **Conflict Resolution:** \`-X ${strategy}\` (${strategy === 'theirs' ? 'upstream wins' : 'midstream wins'})
+            **Triggered By:** ${context.eventName === 'schedule' ? 'Scheduled sync (Wednesday)' : 'Manual trigger'}
+
+            ### Midstream File Protection
+            The following paths are protected from upstream overwrites via \`.gitattributes merge=ours\`:
+            - \`.tekton/**\` — Konflux/Tekton pipelines
+            - \`examples/openshift/**\` — OpenShift-specific docs, tests, and configs
+            - \`config/overlays/**\` — ODH/RHOAI Kustomize overlays
+
+            ### Testing Required
+            - [ ] All midstream CI checks pass
+
+            ### Sync Strategy
+            See [SYNC-STRATEGY.md](examples/openshift/upstream-sync/SYNC-STRATEGY.md) for details.
+
+            ---
+            Automated sync via GitHub Actions
+            `
+            });
+
+            console.log(`Pull request created: ${pr.html_url}`);
+
+            await github.rest.pulls.requestReviewers({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: pr.number,
+              reviewers: ['shruthis4', 'alinaryan', 'Vedant-Deshpande']
+            });
+
+      - name: Report failure
+        if: failure()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const issue = {
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title: 'Upstream sync failed - ${{ steps.branch.outputs.sync_date }}',
+              body: `The automated upstream sync failed. Manual intervention required.
+
+            **Workflow Run:** ${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}
+            **Branch:** \`${{ steps.branch.outputs.branch_name }}\`
+            **Merge Status:** ${{ steps.merge.outputs.merge_status }}
+
+            ### Next Steps
+            1. Review the workflow logs for details
+            2. Use the manual sync script if conflicts require interactive resolution:
+               \`\`\`bash
+               cd examples/openshift/upstream-sync
+               ./sync.sh --interactive
+               \`\`\`
+            3. See [SYNC-STRATEGY.md](examples/openshift/upstream-sync/SYNC-STRATEGY.md) for manual merge commands
+
+            cc: @shruthis4 @alinaryan
+            `
+            };
+
+            if (context.eventName === 'schedule') {
+              await github.rest.issues.create(issue);
+            } else {
+              console.log('Manual trigger - skipping issue creation. Failure details:');
+              console.log(issue.body);
+            }
+
+      - name: Slack Notification
+        if: failure()
+        uses: rtCamp/action-slack-notify@v2
+        env:
+          SLACK_MESSAGE: ':red-warning: Upstream Sync Failed for spark-operator! Check the <${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}|workflow run>.'
+          SLACK_WEBHOOK: ${{ secrets.SLACK_WEBHOOK }}
+          MSG_MINIMAL: true
+          SLACK_COLOR: ${{ job.status }}
+          SLACK_FOOTER: ''
