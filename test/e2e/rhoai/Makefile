@@ -19,6 +19,13 @@ KIND_CLUSTER_NAME ?= spark-operator
 CLEANUP ?= true
 IMAGE_TAG ?= local
 
+# Propagate test-related env vars set by CI (e.g. midstream-e2e.yaml) to
+# subprocesses (go test).  Using 'export' avoids the inline-assignment
+# pattern "VAR=$(VAR)" which clobbers an inherited env var with empty when
+# Make does not resolve the value.
+export INSTALL_METHOD ?=
+export SPARK_OPERATOR_IMAGE ?=
+
 ##@ General
 
 .PHONY: help
@@ -47,7 +54,7 @@ kind-cleanup: ## Delete the Kind cluster and cleanup resources.
 .PHONY: e2e-rhoai-test
 e2e-rhoai-test: ## Run midstream RHOAI e2e tests (kustomize or preinstalled).
 	@echo "Running RHOAI e2e tests (install_method=$(INSTALL_METHOD))..."
-	cd $(MAKEFILE_DIR) && INSTALL_METHOD=$(INSTALL_METHOD) SPARK_OPERATOR_IMAGE=$(SPARK_OPERATOR_IMAGE) \
+	cd $(MAKEFILE_DIR) && \
 		go test ./... -v -ginkgo.v -timeout 30m -coverprofile $(REPO_ROOT)/cover-e2e-rhoai.out
 
 .PHONY: e2e-kueue-test
