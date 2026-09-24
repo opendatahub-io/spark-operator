@@ -47,11 +47,17 @@ func (r *SparkOperatorModuleReconciler) reconcileComponent(ctx context.Context,
 		return nil, fmt.Errorf("applying webhook job namespaces: %w", err)
 	}
 
+	controllerResources := platformv1alpha1.ResolveControllerResources(cr)
+	if err := applyControllerResources(resources, controllerResources); err != nil {
+		return nil, fmt.Errorf("applying controller resources: %w", err)
+	}
+
 	applyManagedByLabel(resources, SparkOperatorComponentName)
 	log.Info("rendered kustomize manifests",
 		"component", comp.name,
 		"resourceCount", len(resources),
 		"jobNamespaces", jobNamespaces,
+		"controllerResourcesSet", controllerResources != nil,
 	)
 
 	return resources, nil

@@ -168,6 +168,31 @@ webhooks:
         - key: kubernetes.io/metadata.name
           operator: In
           values: ["default"]
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: spark-operator-controller
+  namespace: opendatahub
+spec:
+  selector:
+    matchLabels:
+      app: spark-operator-controller
+  template:
+    metadata:
+      labels:
+        app: spark-operator-controller
+    spec:
+      containers:
+        - name: controller
+          image: placeholder
+          resources:
+            limits:
+              cpu: 500m
+              memory: 512Mi
+            requests:
+              cpu: 100m
+              memory: 128Mi
 `
 	componentMetadata := fmt.Sprintf(`releases:
   - name: %s

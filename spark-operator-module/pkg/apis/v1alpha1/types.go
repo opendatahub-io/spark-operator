@@ -2,6 +2,7 @@
 package v1alpha1
 
 import (
+	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	"github.com/opendatahub-io/odh-platform-utilities/api/common"
@@ -34,7 +35,8 @@ type SparkOperator struct {
 type SparkOperatorSpec struct {
 	common.ManagementSpec `json:",inline"`
 
-	// Spark configures Spark Operator job/webhook namespace scope.
+	// Spark configures Spark Operator runtime settings under platform management
+	// (webhook job namespaces, controller resources, etc.).
 	// +optional
 	Spark *SparkSpec `json:"spark,omitempty"`
 }
@@ -51,6 +53,15 @@ type SparkSpec struct {
 	// +optional
 	// +listType=set
 	JobNamespaces []string `json:"jobNamespaces,omitempty"`
+
+	// ControllerResources overrides container resources on the
+	// spark-operator-controller Deployment. When nil or omitted (or both
+	// requests and limits are empty), the module keeps the rendered manifest
+	// defaults so a bare Managed CR does not change stock sizing.
+	//
+	// This is the platform-CR equivalent of Helm's controller.resources.
+	// +optional
+	ControllerResources *corev1.ResourceRequirements `json:"controllerResources,omitempty"`
 }
 
 // SparkOperatorStatus defines the observed state of SparkOperator.
@@ -92,6 +103,19 @@ func ResolveJobNamespaces(sparkOperator *SparkOperator) []string {
 		return append([]string(nil), DefaultJobNamespaces...)
 	}
 	return namespaces
+}
+
+// ResolveControllerResources returns Spec.Spark.ControllerResources when set
+// with at least one request or limit. Nil means keep rendered manifest defaults.
+func ResolveControllerResources(sparkOperator *SparkOperator) *corev1.ResourceRequirements {
+	if sparkOperator == nil || sparkOperator.Spec.Spark == nil {
+		return nil
+	}
+	rr := sparkOperator.Spec.Spark.ControllerResources
+	if rr == nil || (len(rr.Limits) == 0 && len(rr.Requests) == 0) {
+		return nil
+	}
+	return rr
 }
 
 // +kubebuilder:object:root=true

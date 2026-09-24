@@ -6,7 +6,9 @@ import (
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	corev1 "k8s.io/api/core/v1"
 	k8serr "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -176,6 +178,51 @@ var _ = Describe("SparkOperatorModule Reconciler", func() {
 			}
 		}
 		Expect(foundWebhook).To(BeTrue())
+	})
+
+	It("applies spark.controllerResources to the controller Deployment", func(ctx SpecContext) {
+		cr := fixture.SparkOperatorCR(fixture.WithControllerResources(corev1.ResourceRequirements{
+			Limits: corev1.ResourceList{
+				corev1.ResourceMemory: resource.MustParse("2Gi"),
+				corev1.ResourceCPU:    resource.MustParse("2"),
+			},
+			Requests: corev1.ResourceList{
+				corev1.ResourceMemory: resource.MustParse("512Mi"),
+				corev1.ResourceCPU:    resource.MustParse("200m"),
+			},
+		}))
+		Expect(testEnv.Client.Create(ctx, cr)).To(Succeed())
+		DeferCleanup(func(ctx SpecContext) {
+			Expect(client.IgnoreNotFound(testEnv.Client.Delete(ctx, cr))).To(Succeed())
+		})
+
+		Eventually(func(g Gomega) {
+			g.Expect(testEnv.Client.Get(ctx, client.ObjectKeyFromObject(cr), cr)).To(Succeed())
+			cond := fixture.FindCondition(cr, string(common.ConditionTypeProvisioningSucceeded))
+			g.Expect(cond).NotTo(BeNil())
+			g.Expect(cond.Status).To(Equal(metav1.ConditionTrue))
+		}).WithContext(ctx).Should(Succeed())
+
+		lastCall := testEnv.Deployer.LastCall()
+		Expect(lastCall).NotTo(BeNil())
+
+		found := false
+		for _, res := range lastCall.Resources {
+			if res.GetKind() != "Deployment" || res.GetName() != "spark-operator-controller" {
+				continue
+			}
+			found = true
+			containers, ok, err := unstructured.NestedSlice(res.Object, "spec", "template", "spec", "containers")
+			Expect(err).NotTo(HaveOccurred())
+			Expect(ok).To(BeTrue())
+			Expect(containers).NotTo(BeEmpty())
+			resourcesObj := containers[0].(map[string]any)["resources"].(map[string]any)
+			Expect(resourcesObj["limits"]).To(HaveKeyWithValue("memory", "2Gi"))
+			Expect(resourcesObj["limits"]).To(HaveKeyWithValue("cpu", "2"))
+			Expect(resourcesObj["requests"]).To(HaveKeyWithValue("memory", "512Mi"))
+			Expect(resourcesObj["requests"]).To(HaveKeyWithValue("cpu", "200m"))
+		}
+		Expect(found).To(BeTrue())
 	})
 
 	Context("readiness transitions and status completeness", Ordered, func() {

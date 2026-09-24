@@ -5,6 +5,7 @@
 package v1alpha1
 
 import (
+	"k8s.io/api/core/v1"
 	runtime "k8s.io/apimachinery/pkg/runtime"
 )
 
@@ -112,6 +113,11 @@ func (in *SparkSpec) DeepCopyInto(out *SparkSpec) {
 		in, out := &in.JobNamespaces, &out.JobNamespaces
 		*out = make([]string, len(*in))
 		copy(*out, *in)
+	}
+	if in.ControllerResources != nil {
+		in, out := &in.ControllerResources, &out.ControllerResources
+		*out = new(v1.ResourceRequirements)
+		(*in).DeepCopyInto(*out)
 	}
 }
 
