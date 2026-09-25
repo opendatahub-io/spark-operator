@@ -1,0 +1,50 @@
+# Per-namespace driver ServiceAccount + Role/RoleBinding.
+# Mirrors charts/spark-operator-chart/templates/spark/rbac.yaml rules.
+# Applied once per bench namespace by setup.sh (templated via sed).
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: spark
+  namespace: NAMESPACE_PLACEHOLDER
+  labels:
+    spark-bench: "true"
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: spark-role
+  namespace: NAMESPACE_PLACEHOLDER
+  labels:
+    spark-bench: "true"
+rules:
+  - apiGroups: [""]
+    resources:
+      - pods
+      - configmaps
+      - persistentvolumeclaims
+      - services
+    verbs:
+      - get
+      - list
+      - watch
+      - create
+      - update
+      - patch
+      - delete
+      - deletecollection
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: spark-role-binding
+  namespace: NAMESPACE_PLACEHOLDER
+  labels:
+    spark-bench: "true"
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: spark-role
+subjects:
+  - kind: ServiceAccount
+    name: spark
+    namespace: NAMESPACE_PLACEHOLDER

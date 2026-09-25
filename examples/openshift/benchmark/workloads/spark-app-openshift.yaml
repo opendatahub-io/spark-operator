@@ -1,0 +1,73 @@
+# OpenShift AI SparkApplication template for operator benchmarking.
+# Locust overwrites metadata.name, metadata.namespace, labels, podNamePrefix,
+# and driver.serviceAccount.
+#
+# Shape: 1 driver + 5 static executors (upstream EKS parity).
+# Resources sized for 50 concurrent apps on 4x m5.2xlarge (~120 GiB allocatable).
+# Image: Apache Spark 4.0.1 aligns with RHOAI-shipped Spark version; override if
+# using an internal mirror.
+#
+# Upstream diffs vs EKS spark-app-with-webhook.yaml:
+# - Removed NodeGroupType nodeSelector and EKS tolerations
+# - Removed log4j ConfigMap volume mounts
+# - Replaced ECR pi-sleep image with public apache/spark + SparkPi
+# - UID 185 + anyuid SCC (setup/) — apache/spark image expects UID 185
+# - Uses serviceAccount "spark" (created by setup/)
+
+apiVersion: sparkoperator.k8s.io/v1beta2
+kind: SparkApplication
+metadata:
+  name: spark-bench-template
+  namespace: spark-bench-a
+  labels:
+    spark-bench: "true"
+spec:
+  type: Scala
+  mode: cluster
+  image: docker.io/apache/spark:4.0.1
+  imagePullPolicy: IfNotPresent
+  mainClass: org.apache.spark.examples.SparkPi
+  mainApplicationFile: local:///opt/spark/examples/jars/spark-examples.jar
+  arguments:
+    - "10000"
+  sparkVersion: "4.0.1"
+  sparkConf:
+    spark.kubernetes.executor.podNamePrefix: spark-bench-template
+    # Keep reserved memory tiny for dense bin-packing (test-only; not for production).
+    spark.testing.reservedMemory: "1"
+  restartPolicy:
+    type: Never
+  # Must survive the full submission window + lifecycle collection.
+  # 600s was too short: early apps got TTL-deleted before the watcher ran.
+  # 7200s (2h) is safe for runs up to ~60 min; cleanup.sh handles deletion.
+  timeToLiveSeconds: 7200
+  driver:
+    cores: 1
+    coreRequest: "100m"
+    memory: 512m
+    serviceAccount: spark
+    securityContext:
+      allowPrivilegeEscalation: false
+      capabilities:
+        drop:
+          - ALL
+      runAsUser: 185
+      runAsGroup: 185
+      runAsNonRoot: true
+      seccompProfile:
+        type: RuntimeDefault
+  executor:
+    instances: 5
+    cores: 1
+    coreRequest: "100m"
+    memory: 256m
+    securityContext:
+      allowPrivilegeEscalation: false
+      capabilities:
+        drop:
+          - ALL
+      runAsUser: 185
+      runAsGroup: 185
+      runAsNonRoot: true
+      seccompProfile:
+        type: RuntimeDefault
