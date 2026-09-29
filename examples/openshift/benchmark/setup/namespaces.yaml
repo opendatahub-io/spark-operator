@@ -1,0 +1,25 @@
+# Benchmark namespaces for OpenShift AI Spark Operator P0 validation.
+# Operator watches all namespaces (--namespaces= empty on this cluster).
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: spark-bench-a
+  labels:
+    spark-bench: "true"
+    kubernetes.io/metadata.name: spark-bench-a
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: spark-bench-b
+  labels:
+    spark-bench: "true"
+    kubernetes.io/metadata.name: spark-bench-b
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: spark-bench-c
+  labels:
+    spark-bench: "true"
+    kubernetes.io/metadata.name: spark-bench-c
