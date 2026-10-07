@@ -3,4 +3,5 @@
 # preventing -X theirs from overwriting OpenShift-specific content.
 .tekton/** merge=ours
 examples/openshift/** merge=ours
-config/overlays/** merge=ours
+config/overlays/odh/** merge=ours
+config/overlays/rhoai/** merge=ours
