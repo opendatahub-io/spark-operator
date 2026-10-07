@@ -12,7 +12,7 @@ This guide walks through connecting an RHOAI workbench to a Spark Connect server
 Create a SparkConnect resource in the `redhat-ods-applications` namespace:
 
 ```bash
-kubectl apply -f spark-connect-server-rhoai.yaml
+oc apply -f spark-connect-server-rhoai.yaml
 ```
 
 By default, the required ServiceAccount, Role, RoleBinding, and NetworkPolicy resources exist only in `redhat-ods-applications`. To deploy a SparkConnect resource in a different namespace, you must recreate these resources there. Use the following commands to inspect the originals:
@@ -65,14 +65,16 @@ spec:
 ```
 
 ```bash
-kubectl apply -f spark-connect-service.yaml
+oc apply -f spark-connect-service.yaml
 ```
 
 ### Run a Spark Workload from a Workbench
 
+Create a workbench from the RHOAI dashboard by navigating to your Data Science Project and clicking **Create workbench**. A minimal Jupyter CPU image (e.g., "Jupyter | Minimal | CPU | Python 3.12") is sufficient for Spark Connect workloads.
+
 Spark Connect supports DataFrames, Spark SQL, and parts of Structured Streaming and MLlib from a Jupyter notebook. DataFrames are the best fit for notebooks since they offer a familiar tabular interface similar to pandas.
 
-First, install PySpark and its dependencies. The PySpark version must match the Spark version used in the Spark Connect server image:
+First, install PySpark and its dependencies. The PySpark version must match the Spark version used in the Spark Connect server image. After running this cell, you may need to restart the notebook kernel for the packages to take effect:
 
 ```
 !pip install pyspark==4.0.1 pandas pyarrow grpcio grpcio-status zstandard
@@ -107,14 +109,14 @@ To check the Spark Connect server logs run:
 oc logs spark-connect-server -n redhat-ods-applications
 ```
 
-To debug connectivity issues, open a shell on the workbench pod. First, find the pod name in the rhods-notebooks namespace, run:
+To debug connectivity issues, open a shell on the workbench pod. First, find the workbench pod name and namespace:
 
 ```bash
-oc get pods -n rhods-notebooks
+oc get pods --all-namespaces -l opendatahub.io/workbenches=true
 ```
 
 Then exec into the pod for any other further debugging you might need to do:
 
 ```bash
-oc rsh -n rhods-notebooks <workbench-pod-name>
+oc rsh -n <project-namespace> <workbench-pod-name>
 ```

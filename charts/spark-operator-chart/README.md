@@ -94,7 +94,7 @@ See [helm uninstall](https://helm.sh/docs/helm/helm_uninstall) for command docum
 | hook.labels | object | `{}` | Extra labels for the Helm hook Job pod. |
 | hook.annotations | object | `{}` | Extra annotations for the Helm hook Job pod. |
 | controller.replicas | int | `1` | Number of replicas of controller. |
-| controller.featureGates | list | `[{"enabled":false,"name":"PartialRestart"},{"enabled":false,"name":"LoadSparkDefaults"},{"enabled":false,"name":"RestSubmitter"}]` | Feature gates to enable or disable specific features. |
+| controller.featureGates | list | `[{"enabled":false,"name":"PartialRestart"},{"enabled":false,"name":"LoadSparkDefaults"},{"enabled":false,"name":"RestSubmitter"},{"enabled":false,"name":"DefaultTimeToLive"}]` | Feature gates to enable or disable specific features. |
 | controller.revisionHistoryLimit | int | `10` | The number of old history to retain to allow rollback. |
 | controller.leaderElection.enable | bool | `true` | Specifies whether to enable leader election for controller. |
 | controller.leaderElection.leaseDuration | string | `"15s"` | Leader election lease duration. |
@@ -105,6 +105,8 @@ See [helm uninstall](https://helm.sh/docs/helm/helm_uninstall) for command docum
 | controller.logEncoder | string | `"console"` | Configure the encoder of logging, can be one of `console` or `json`. |
 | controller.driverPodCreationGracePeriod | string | `"10s"` | Grace period after a successful spark-submit when driver pod not found errors will be retried. Useful if the driver pod can take some time to be created. |
 | controller.maxTrackedExecutorPerApp | int | `1000` | Specifies the maximum number of Executor pods that can be tracked by the controller per SparkApplication. |
+| controller.defaultTimeToLiveSeconds | int | `0` | Default Time-To-Live (in seconds) applied to terminated SparkApplications that do not set spec.timeToLiveSeconds. Requires the DefaultTimeToLive feature gate to be enabled. 0 (default) disables it. |
+| controller.defaultServiceAccount | string | `""` | Name of the service account used by the Spark driver pod and the Spark Connect server pod when neither the custom resource nor its pod template specifies one. Leave empty to disable the fallback, in which case the namespace's default service account is used. The service account must already exist in every namespace where Spark workloads are created; note that `spark.serviceAccount.create` only provisions accounts for the namespaces listed in `spark.jobNamespaces`. |
 | controller.driverPodDisruptionBudget | object | `{"enable":false}` | Driver PDB feature gate. When true, the controller creates a PodDisruptionBudget for each SparkApplication that sets spec.driverPodDisruptionBudget=true. Default false. |
 | controller.kubeAPIQPS | int | `20` | Maximum QPS to the API server from the controller client. |
 | controller.kubeAPIBurst | int | `30` | Maximum burst for throttle from the controller client. |
@@ -132,7 +134,7 @@ See [helm uninstall](https://helm.sh/docs/helm/helm_uninstall) for command docum
 | controller.affinity | object | `{}` | Affinity for controller pods. |
 | controller.tolerations | list | `[]` | List of node taints to tolerate for controller pods. |
 | controller.priorityClassName | string | `""` | Priority class for controller pods. |
-| controller.podSecurityContext | object | `{"fsGroup":null}` | Security context for controller pods. |
+| controller.podSecurityContext | object | `{"fsGroup":185}` | Security context for controller pods. |
 | controller.topologySpreadConstraints | list | `[]` | Topology spread constraints rely on node labels to identify the topology domain(s) that each Node is in. Ref: [Pod Topology Spread Constraints](https://kubernetes.io/docs/concepts/workloads/pods/pod-topology-spread-constraints/). The labelSelector field in topology spread constraint will be set to the selector labels for controller pods if not specified. |
 | controller.hostUsers | string | `nil` | Whether to use user namespace or not Kubernetes version 1.30 for feature beta (1.33 for GA) or higher is required with support from OS and OCI runtime ref: https://kubernetes.io/docs/concepts/workloads/pods/user-namespaces/ |
 | controller.env | list | `[]` | Environment variables for controller containers. |
@@ -161,6 +163,9 @@ See [helm uninstall](https://helm.sh/docs/helm/helm_uninstall) for command docum
 | webhook.replicas | int | `1` | Number of replicas of webhook server. |
 | webhook.revisionHistoryLimit | int | `10` | The number of old history to retain to allow rollback. |
 | webhook.leaderElection.enable | bool | `true` | Specifies whether to enable leader election for webhook. |
+| webhook.leaderElection.leaseDuration | string | `"15s"` | Leader election lease duration. |
+| webhook.leaderElection.renewDeadline | string | `"10s"` | Leader election renew deadline. |
+| webhook.leaderElection.retryPeriod | string | `"2s"` | Leader election retry period. |
 | webhook.logLevel | string | `"info"` | Configure the verbosity of logging, can be one of `debug`, `info`, `error`. |
 | webhook.logEncoder | string | `"console"` | Configure the encoder of logging, can be one of `console` or `json`. |
 | webhook.port | int | `9443` | Specifies webhook port. |
@@ -185,7 +190,7 @@ See [helm uninstall](https://helm.sh/docs/helm/helm_uninstall) for command docum
 | webhook.affinity | object | `{}` | Affinity for webhook pods. |
 | webhook.tolerations | list | `[]` | List of node taints to tolerate for webhook pods. |
 | webhook.priorityClassName | string | `""` | Priority class for webhook pods. |
-| webhook.podSecurityContext | object | `{"fsGroup":null}` | Security context for webhook pods. |
+| webhook.podSecurityContext | object | `{"fsGroup":185}` | Security context for webhook pods. |
 | webhook.topologySpreadConstraints | list | `[]` | Topology spread constraints rely on node labels to identify the topology domain(s) that each Node is in. Ref: [Pod Topology Spread Constraints](https://kubernetes.io/docs/concepts/workloads/pods/pod-topology-spread-constraints/). The labelSelector field in topology spread constraint will be set to the selector labels for webhook pods if not specified. |
 | webhook.hostUsers | string | `nil` | Whether to use user namespace or not Kubernetes version 1.30 for feature beta (1.33 for GA) or higher is required with support from OS and OCI runtime ref: https://kubernetes.io/docs/concepts/workloads/pods/user-namespaces/ |
 | webhook.env | list | `[]` | Environment variables for webhook containers. |

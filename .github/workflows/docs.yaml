@@ -5,6 +5,8 @@ name: Documentation
 # Read the Docs (see .readthedocs.yaml), not by this workflow.
 
 on:
+  schedule:
+    - cron: '0 4 * * 1'
   pull_request:
     paths:
       - "docs/website/**"
@@ -12,6 +14,7 @@ on:
       - ".github/workflows/docs.yaml"
   push:
     branches:
+      - main
       - master
       - rhoai-*
     paths:
@@ -34,7 +37,7 @@ jobs:
     runs-on: ubuntu-latest
     name: Build Documentation
     steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Install uv
         uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7.6.0
@@ -57,7 +60,7 @@ jobs:
     # Non-blocking: external links can be flaky and should not fail the PR.
     continue-on-error: true
     steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Install uv
         uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7.6.0
@@ -67,3 +70,10 @@ jobs:
       - name: Check links
         # Informational only — a broken link is reported but never fails the check.
         run: uv run --group docs sphinx-build -b linkcheck . _build/linkcheck || true
+
+  notify-on-failure:
+    if: always() && github.event_name == 'schedule' && contains(needs.*.result, 'failure')
+    needs: [build, linkcheck]
+    uses: ./.github/workflows/_notify-on-failure.yaml
+    secrets:
+      SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}

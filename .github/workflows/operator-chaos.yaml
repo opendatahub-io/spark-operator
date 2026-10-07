@@ -1,6 +1,8 @@
 name: Operator Chaos
 
 on:
+  schedule:
+    - cron: '0 4 * * 1'
   pull_request:
     branches:
       - main
@@ -14,7 +16,7 @@ on:
       - ".github/workflows/operator-chaos.yaml"
 
 concurrency:
-  group: operator-chaos-${{ github.event.pull_request.number }}
+  group: operator-chaos-${{ github.event.pull_request.number || github.run_id }}
   cancel-in-progress: true
 
 env:
@@ -145,3 +147,10 @@ jobs:
             --source "base-branch/chaos/knowledge" \
             --target "chaos/knowledge" \
             --dry-run
+
+  notify-on-failure:
+    if: always() && github.event_name == 'schedule' && contains(needs.*.result, 'failure')
+    needs: [operator-chaos]
+    uses: ./.github/workflows/_notify-on-failure.yaml
+    secrets:
+      SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}

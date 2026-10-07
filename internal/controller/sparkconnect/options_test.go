@@ -17,9 +17,15 @@ limitations under the License.
 package sparkconnect
 
 import (
+	"bytes"
+	"fmt"
+	"os/exec"
+	"strings"
+
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
+	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	"github.com/kubeflow/spark-operator/v2/api/v1alpha1"
@@ -56,5 +62,90 @@ var _ = Describe("Options functions", func() {
 				),
 			))
 		})
+
+		It("uses the first template container when the default executor container is absent", func() {
+			image := "apache/spark:3.5.0"
+			conn := &v1alpha1.SparkConnect{
+				Spec: v1alpha1.SparkConnectSpec{
+					Executor: v1alpha1.ExecutorSpec{
+						SparkPodSpec: v1alpha1.SparkPodSpec{
+							Template: &corev1.PodTemplateSpec{
+								Spec: corev1.PodSpec{
+									Containers: []corev1.Container{{
+										Name:  "executor",
+										Image: image,
+									}},
+								},
+							},
+						},
+					},
+				},
+			}
+
+			args, err := imageOption(conn)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(args).To(ContainElements(
+				fmt.Sprintf("%s=%s", common.SparkKubernetesContainerImage, image),
+				fmt.Sprintf("%s=%s", common.SparkKubernetesExecutorContainerImage, image),
+			))
+		})
+	})
+
+	Context("sparkConfOption", func() {
+		It("preserves shell-sensitive Spark configuration values", func() {
+			config := map[string]string{
+				"spark.redaction.regex":          "(?i)secret|password|token|access[.]key|account[.]key",
+				"spark.driver.extraJavaOptions":  `-Dmessage="hello world" -Dquote='value'`,
+				"spark.example.shell_expression": "$HOME $(printf injected) `printf injected` ; & |",
+				"spark.example.multiline":        "first line\nsecond line",
+				"spark.example.empty":            "",
+			}
+			conn := &v1alpha1.SparkConnect{
+				Spec: v1alpha1.SparkConnectSpec{SparkConf: config},
+			}
+
+			args, err := sparkConfOption(conn)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(shellParsedSparkConfig(args)).To(Equal(config))
+		})
+	})
+
+	Context("hadoopConfOption", func() {
+		It("preserves shell-sensitive Hadoop configuration values", func() {
+			conn := &v1alpha1.SparkConnect{
+				Spec: v1alpha1.SparkConnectSpec{
+					HadoopConf: map[string]string{
+						"fs.example.regex":              "(?i)secret|password",
+						"spark.hadoop.fs.example.value": "literal '$HOME' $(printf injected)",
+					},
+				},
+			}
+
+			args, err := hadoopConfOption(conn)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(shellParsedSparkConfig(args)).To(Equal(map[string]string{
+				"spark.hadoop.fs.example.regex": "(?i)secret|password",
+				"spark.hadoop.fs.example.value": "literal '$HOME' $(printf injected)",
+			}))
+		})
 	})
 })
+
+func shellParsedSparkConfig(args []string) map[string]string {
+	GinkgoHelper()
+
+	output, err := exec.Command("bash", "-c", "printf '%s\\0' "+strings.Join(args, " ")).Output()
+	Expect(err).NotTo(HaveOccurred())
+
+	fields := bytes.Split(bytes.TrimSuffix(output, []byte{0}), []byte{0})
+	Expect(len(fields) % 2).To(Equal(0))
+
+	config := make(map[string]string, len(fields)/2)
+	for index := 0; index < len(fields); index += 2 {
+		Expect(string(fields[index])).To(Equal("--conf"))
+		key, value, found := strings.Cut(string(fields[index+1]), "=")
+		Expect(found).To(BeTrue())
+		config[key] = value
+	}
+	return config
+}

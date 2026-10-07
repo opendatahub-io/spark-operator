@@ -18,6 +18,7 @@ package webhook
 
 import (
 	"context"
+	"crypto/sha256"
 	"fmt"
 	"reflect"
 	"slices"
@@ -334,15 +335,14 @@ func addGeneralConfigMaps(pod *corev1.Pod, app *v1beta2.SparkApplication) error 
 		configMaps = app.Spec.Executor.ConfigMaps
 	}
 
-	logger := log.FromContext(context.TODO())
+	addedVolumes := make(map[string]bool, len(configMaps))
 	for _, namePath := range configMaps {
-		volumeName := namePath.Name + "-vol"
-		if len(volumeName) > maxNameLength {
-			volumeName = volumeName[0:maxNameLength]
-			logger.Info("ConfigMap volume name is too long. Truncating", "result", volumeName)
-		}
-		if err := addConfigMapVolume(pod, namePath.Name, volumeName); err != nil {
-			return err
+		volumeName := getConfigMapVolumeName(namePath.Name)
+		if !addedVolumes[namePath.Name] {
+			if err := addConfigMapVolume(pod, namePath.Name, volumeName); err != nil {
+				return err
+			}
+			addedVolumes[namePath.Name] = true
 		}
 
 		if err := addConfigMapVolumeMount(pod, volumeName, namePath.Path); err != nil {
@@ -350,6 +350,26 @@ func addGeneralConfigMaps(pod *corev1.Pod, app *v1beta2.SparkApplication) error 
 		}
 	}
 	return nil
+}
+
+func getConfigMapVolumeName(configMapName string) string {
+	const volumeSuffix = "-vol"
+	preferredName := configMapName + volumeSuffix
+	if len(preferredName) <= maxNameLength && !strings.Contains(preferredName, ".") {
+		return preferredName
+	}
+
+	// ConfigMap names are DNS subdomains and may contain dots, while volume names
+	// must be DNS labels. Add a hash so sanitizing or truncating stays unique.
+	sanitizedName := strings.ReplaceAll(configMapName, ".", "-")
+	hash := fmt.Sprintf("%x", sha256.Sum256([]byte(configMapName)))[:8]
+	hashedSuffix := "-" + hash + volumeSuffix
+	maxPrefixLength := maxNameLength - len(hashedSuffix)
+	if len(sanitizedName) > maxPrefixLength {
+		sanitizedName = sanitizedName[:maxPrefixLength]
+	}
+	sanitizedName = strings.TrimRight(sanitizedName, "-")
+	return sanitizedName + hashedSuffix
 }
 
 func addPrometheusConfig(pod *corev1.Pod, app *v1beta2.SparkApplication) error {
@@ -367,7 +387,7 @@ func addPrometheusConfig(pod *corev1.Pod, app *v1beta2.SparkApplication) error {
 	}
 
 	name := util.GetPrometheusConfigMapName(app)
-	volumeName := name + "-vol"
+	volumeName := getConfigMapVolumeName(name)
 	mountPath := common.PrometheusConfigMapMountPath
 	promPort := common.DefaultPrometheusJavaAgentPort
 	if app.Spec.Monitoring.Prometheus.Port != nil {

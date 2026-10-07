@@ -95,6 +95,8 @@ controller:
     enabled: false
   - name: RestSubmitter
     enabled: false
+  - name: DefaultTimeToLive
+    enabled: false
 
   # -- The number of old history to retain to allow rollback.
   revisionHistoryLimit: 10
@@ -123,6 +125,19 @@ controller:
 
   # -- Specifies the maximum number of Executor pods that can be tracked by the controller per SparkApplication.
   maxTrackedExecutorPerApp: 1000
+
+  # -- Default Time-To-Live (in seconds) applied to terminated SparkApplications that do not
+  # set spec.timeToLiveSeconds. Requires the DefaultTimeToLive feature gate to be enabled.
+  # 0 (default) disables it.
+  defaultTimeToLiveSeconds: 0
+
+  # -- Name of the service account used by the Spark driver pod and the Spark Connect server
+  # pod when neither the custom resource nor its pod template specifies one. Leave empty to
+  # disable the fallback, in which case the namespace's default service account is used. The
+  # service account must already exist in every namespace where Spark workloads are created;
+  # note that `spark.serviceAccount.create` only provisions accounts for the namespaces listed
+  # in `spark.jobNamespaces`.
+  defaultServiceAccount: ""
 
   # -- Driver PDB feature gate. When true, the controller creates a PodDisruptionBudget for each SparkApplication that sets spec.driverPodDisruptionBudget=true. Default false.
   driverPodDisruptionBudget:
@@ -230,7 +245,7 @@ controller:
 
   # -- Security context for controller pods.
   podSecurityContext:
-    fsGroup: null  # Override upstream default (185) to let OpenShift SCC assign
+    fsGroup: 185
 
   # -- Topology spread constraints rely on node labels to identify the topology domain(s) that each Node is in.
   # Ref: [Pod Topology Spread Constraints](https://kubernetes.io/docs/concepts/workloads/pods/pod-topology-spread-constraints/).
@@ -359,6 +374,12 @@ webhook:
   leaderElection:
     # -- Specifies whether to enable leader election for webhook.
     enable: true
+    # -- Leader election lease duration.
+    leaseDuration: 15s
+    # -- Leader election renew deadline.
+    renewDeadline: 10s
+    # -- Leader election retry period.
+    retryPeriod: 2s
 
   # -- Configure the verbosity of logging, can be one of `debug`, `info`, `error`.
   logLevel: info
@@ -443,7 +464,7 @@ webhook:
 
   # -- Security context for webhook pods.
   podSecurityContext:
-    fsGroup: null  # Override upstream default (185) to let OpenShift SCC assign
+    fsGroup: 185
 
   # -- Topology spread constraints rely on node labels to identify the topology domain(s) that each Node is in.
   # Ref: [Pod Topology Spread Constraints](https://kubernetes.io/docs/concepts/workloads/pods/pod-topology-spread-constraints/).

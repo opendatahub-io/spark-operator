@@ -15,3 +15,6 @@ resources:
   - sparkapplication_editor_role.yaml
   - scheduledsparkapplication_viewer_role.yaml
   - scheduledsparkapplication_editor_role.yaml
+  # TLS security profile watcher RBAC (OpenShift clusters)
+  - tls-clusterrole.yaml
+  - tls-clusterrolebinding.yaml

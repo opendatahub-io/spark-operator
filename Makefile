@@ -13,8 +13,15 @@ SHELL = /usr/bin/env bash -o pipefail
 .SHELLFLAGS = -ec
 
 # Version information.
-VERSION ?= $(shell cat VERSION | sed "s/^v//")
-BUILD_DATE := $(shell date -u +"%Y-%m-%dT%H:%M:%S%:z")
+VERSION := $(shell cat VERSION | sed "s/^v//")
+# BUILD_DATE defaults to the current time. Set SOURCE_DATE_EPOCH (as CI does)
+# to pin it to a fixed timestamp for reproducible builds.
+BUILD_DATE := $(shell if [ -n "$(SOURCE_DATE_EPOCH)" ]; then \
+                        date -u -d "@$(SOURCE_DATE_EPOCH)" +"%Y-%m-%dT%H:%M:%S%:z" 2>/dev/null \
+                        || date -u -r "$(SOURCE_DATE_EPOCH)" +"%Y-%m-%dT%H:%M:%S%:z"; \
+                      else \
+                        date -u +"%Y-%m-%dT%H:%M:%S%:z"; \
+                      fi)
 GIT_COMMIT := $(shell git rev-parse HEAD)
 GIT_TAG := $(shell if [ -z "`git status --porcelain`" ]; then git describe --exact-match --tags HEAD 2>/dev/null; fi)
 GIT_TREE_STATE := $(shell if [ -z "`git status --porcelain`" ]; then echo "clean" ; else echo "dirty"; fi)
@@ -60,7 +67,7 @@ ENVTEST_VERSION ?= release-0.20
 ENVTEST_K8S_VERSION ?= $(shell go list -m -f "{{ .Version }}" k8s.io/api | awk -F'[v.]' '{printf "1.%d", $$3}')
 GOLANGCI_LINT_VERSION ?= v2.1.6
 GEN_CRD_API_REFERENCE_DOCS_VERSION ?= v0.3.0
-HELM_VERSION ?= $(shell grep -e '^	helm.sh/helm/v3 v' go.mod | cut -d ' ' -f 2)
+HELM_VERSION ?= $(shell grep -e '^[[:space:]]*helm.sh/helm/v3 v' test/e2e/go.mod | cut -d ' ' -f 2)
 HELM_UNITTEST_VERSION ?= 0.8.2
 HELM_DOCS_VERSION ?= v1.14.2
 CODE_GENERATOR_VERSION ?= v0.35.4
@@ -146,7 +153,7 @@ go-clean: ## Clean up caches and output.
 .PHONY: go-fmt
 go-fmt: ## Run go fmt against code.
 	@echo "Running go fmt..."
-	if [ -n "$(shell go fmt ./...)" ]; then \
+	if [ -n "$(shell go fmt ./... && cd test/e2e && go fmt ./... && cd rhoai && go fmt ./...)" ]; then \
 		echo "Go code is not formatted, need to run \"make go-fmt\" and commit the changes."; \
 		false; \
 	else \
@@ -157,16 +164,22 @@ go-fmt: ## Run go fmt against code.
 go-vet: ## Run go vet against code.
 	@echo "Running go vet..."
 	go vet ./...
+	cd test/e2e && go vet ./...
+	cd test/e2e/rhoai && go vet ./...
 
 .PHONY: go-lint
 go-lint: golangci-lint ## Run golangci-lint linter.
 	@echo "Running golangci-lint run..."
 	$(GOLANGCI_LINT) run
+	cd test/e2e && $(GOLANGCI_LINT) run --config ../../.golangci.yaml
+	cd test/e2e/rhoai && $(GOLANGCI_LINT) run --config ../../../.golangci.yaml
 
 .PHONY: go-lint-fix
 go-lint-fix: golangci-lint ## Run golangci-lint linter and perform fixes.
 	@echo "Running golangci-lint run --fix..."
 	$(GOLANGCI_LINT) run --fix
+	cd test/e2e && $(GOLANGCI_LINT) run --fix --config ../../.golangci.yaml
+	cd test/e2e/rhoai && $(GOLANGCI_LINT) run --fix --config ../../../.golangci.yaml
 
 # Shell scripts to format and lint (all tracked *.sh files).
 SHELL_SCRIPTS = $(shell git ls-files '*.sh')
@@ -200,7 +213,7 @@ unit-test: setup-envtest ## Run unit tests.
 e2e-test: IMAGE_TAG=local
 e2e-test: envtest kind-load-image kind-load-spark-image ## Run the e2e tests against a Kind k8s instance that is spun up.
 	@echo "Running e2e tests (deploy_method=$(DEPLOY_METHOD))..."
-	DEPLOY_METHOD=$(DEPLOY_METHOD) IMAGE_TAG=$(IMAGE_TAG) KUBECONFIG=$(KIND_KUBE_CONFIG) go test ./test/e2e/ -v -ginkgo.v -timeout 30m
+	cd test/e2e && DEPLOY_METHOD=$(DEPLOY_METHOD) IMAGE_TAG=$(IMAGE_TAG) KUBECONFIG=$(KIND_KUBE_CONFIG) go test ./... -v -ginkgo.v -timeout 30m
 
 ##@ Kustomize
 
@@ -241,7 +254,7 @@ clean: ## Clean binaries.
 build-api-docs: gen-crd-api-reference-docs ## Build api documentation.
 	$(GEN_CRD_API_REFERENCE_DOCS) \
 	-config hack/api-docs/config.json \
-	-api-dir github.com/kubeflow/spark-operator/v2/api/v1beta2 \
+	-api-dir github.com/kubeflow/spark-operator/v2/api \
 	-template-dir hack/api-docs/template \
 	-out-file docs/api-docs.md
 
@@ -340,7 +353,7 @@ kind-load-image: kind-create-cluster docker-build ## Load the image into the kin
 # SPARK_IMAGE is the Spark runtime image used by drivers/executors. Defaults to
 # the same tag used by examples/spark-pi.yaml so manual e2e checks line up with
 # the canonical example. Override on the command line if you need a different one.
-SPARK_IMAGE ?= docker.io/library/spark:4.0.1
+SPARK_IMAGE ?= docker.io/apache/spark:4.0.4@sha256:7112c0c0ca07b7d2605163ba91a05e53af39ba7cfcf9886e63141ade3f850456
 
 .PHONY: kind-load-spark-image
 kind-load-spark-image: kind-create-cluster ## Pull the Spark runtime image and load it into the kind cluster.

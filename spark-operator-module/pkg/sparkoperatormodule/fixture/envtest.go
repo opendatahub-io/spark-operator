@@ -2,6 +2,7 @@ package fixture
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
 	runtimepkg "runtime"
@@ -116,6 +117,11 @@ func ProjectRoot() string {
 	}
 }
 
+const (
+	TestReleaseName    = "Spark Operator"
+	TestReleaseVersion = "v2.4.0"
+)
+
 func WriteMinimalManifests(workDir string) {
 	manifest := `apiVersion: v1
 kind: ConfigMap
@@ -124,12 +130,75 @@ metadata:
   namespace: opendatahub
 data:
   test: "true"
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: MutatingWebhookConfiguration
+metadata:
+  name: spark-operator-webhook-mutating
+webhooks:
+  - name: mutate-sparkapplication.sparkoperator.k8s.io
+    clientConfig:
+      service:
+        name: spark-operator-webhook
+        namespace: opendatahub
+        path: /mutate
+    sideEffects: None
+    admissionReviewVersions: ["v1"]
+    namespaceSelector:
+      matchExpressions:
+        - key: kubernetes.io/metadata.name
+          operator: In
+          values: ["default"]
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingWebhookConfiguration
+metadata:
+  name: spark-operator-webhook-validating
+webhooks:
+  - name: validate-sparkapplication.sparkoperator.k8s.io
+    clientConfig:
+      service:
+        name: spark-operator-webhook
+        namespace: opendatahub
+        path: /validate
+    sideEffects: None
+    admissionReviewVersions: ["v1"]
+    namespaceSelector:
+      matchExpressions:
+        - key: kubernetes.io/metadata.name
+          operator: In
+          values: ["default"]
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: spark-operator-controller
+  namespace: opendatahub
+spec:
+  selector:
+    matchLabels:
+      app: spark-operator-controller
+  template:
+    metadata:
+      labels:
+        app: spark-operator-controller
+    spec:
+      containers:
+        - name: controller
+          image: placeholder
+          resources:
+            limits:
+              cpu: 500m
+              memory: 512Mi
+            requests:
+              cpu: 100m
+              memory: 128Mi
 `
-	componentMetadata := `releases:
-  - name: Spark Operator
-    version: v2.4.0
+	componentMetadata := fmt.Sprintf(`releases:
+  - name: %s
+    version: %s
     repoUrl: https://github.com/opendatahub-io/spark-operator
-`
+`, TestReleaseName, TestReleaseVersion)
 	overlayDir := filepath.Join(workDir, sparkoperatormodule.SparkOperatorComponentName, sparkoperatormodule.SparkOperatorManifestSourcePathODH)
 	writeKustomizeDir(overlayDir, manifest)
 	gomega.Expect(os.WriteFile(

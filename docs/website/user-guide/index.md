@@ -39,6 +39,20 @@ Use `ScheduledSparkApplication` to run Spark jobs on a cron schedule
 
 :::::
 
+## Spark Connect
+
+:::::{grid} 1
+:gutter: 3
+
+::::{grid-item-card} Using Spark Connect
+:link: spark-connect
+:link-type: doc
+
+Run an interactive Spark Connect server and connect remote clients
+::::
+
+:::::
+
 ## Operating the Operator
 
 :::::{grid} 1 1 2 2
@@ -49,6 +63,13 @@ Use `ScheduledSparkApplication` to run Spark jobs on a cron schedule
 :link-type: doc
 
 Tune operator behavior, flags, and Helm chart values
+::::
+
+::::{grid-item-card} Building Custom Operator Images
+:link: building-custom-images
+:link-type: doc
+
+Build your own operator image from the released binaries
 ::::
 
 ::::{grid-item-card} Enabling Leader Election
@@ -118,7 +139,7 @@ Read and write data with GCS and BigQuery on GKE
 :link: notebooks-spark-operator
 :link-type: doc
 
-Run PySpark jobs from Kubeflow Notebooks
+Run distributed PySpark from Kubeflow Notebooks using the Kubeflow SDK
 ::::
 
 :::::
@@ -133,7 +154,9 @@ using-sparkapplication
 writing-sparkapplication
 working-with-sparkapplication
 running-sparkapplication-on-schedule
+spark-connect
 customizing-spark-operator
+building-custom-images
 leader-election
 running-multiple-instances-of-the-operator
 resource-quota-enforcement

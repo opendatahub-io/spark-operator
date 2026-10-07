@@ -84,16 +84,14 @@ func imageOption(conn *v1alpha1.SparkConnect) ([]string, error) {
 
 	template := conn.Spec.Executor.Template
 	if template != nil && len(template.Spec.Containers) != 0 {
-		index := -1
-		for i, container := range template.Spec.Containers {
-			if container.Name == common.Spark3DefaultExecutorContainerName {
-				index = i
-				break
-			}
-		}
 
-		if index != -1 && template.Spec.Containers[index].Image != "" {
-			executorImage = template.Spec.Containers[index].Image
+		container := util.GetContainerByNameOrFirst(
+			template.Spec.Containers,
+			common.Spark3DefaultExecutorContainerName,
+		)
+
+		if container.Image != "" {
+			executorImage = container.Image
 		}
 	}
 
@@ -121,10 +119,15 @@ func sparkConfOption(conn *v1alpha1.SparkConnect) ([]string, error) {
 	for key, value := range conn.Spec.SparkConf {
 		// Configuration property for the driver pod name has already been set.
 		if key != common.SparkKubernetesDriverPodName {
-			args = append(args, "--conf", fmt.Sprintf("%s=%s", key, value))
+			args = append(args, "--conf", shellQuoteSparkConfig(key, value))
 		}
 	}
 	return args, nil
+}
+
+func shellQuoteSparkConfig(key, value string) string {
+	config := fmt.Sprintf("%s=%s", key, value)
+	return fmt.Sprintf("'%s'", strings.ReplaceAll(config, "'", `'"'"'`))
 }
 
 func hadoopConfOption(conn *v1alpha1.SparkConnect) ([]string, error) {
@@ -135,11 +138,11 @@ func hadoopConfOption(conn *v1alpha1.SparkConnect) ([]string, error) {
 	// Add Hadoop configuration properties.
 	for key, value := range conn.Spec.HadoopConf {
 		if strings.HasPrefix(key, common.SparkHadoopPropertiesPrefix) {
-			args = append(args, "--conf", fmt.Sprintf("%s=%s", key, value))
+			args = append(args, "--conf", shellQuoteSparkConfig(key, value))
 		} else {
 			// Add prefix to the configuration key if it does not start with `spark.hadoop.`.
 			// Users will be able to use the configuration key with or without prefix.
-			args = append(args, "--conf", fmt.Sprintf("%s%s=%s", common.SparkHadoopPropertiesPrefix, key, value))
+			args = append(args, "--conf", shellQuoteSparkConfig(common.SparkHadoopPropertiesPrefix+key, value))
 		}
 	}
 	return args, nil

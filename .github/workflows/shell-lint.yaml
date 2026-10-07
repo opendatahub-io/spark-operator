@@ -2,8 +2,11 @@
 name: Shell Lint
 
 on:
+  schedule:
+    - cron: '0 4 * * 1'
   pull_request:
     branches:
+      - main
       - master
       - release-*
       - rhoai-*
@@ -14,6 +17,7 @@ on:
 
   push:
     branches:
+      - main
       - master
       - release-*
       - rhoai-*
@@ -34,7 +38,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout source code
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
 
@@ -54,3 +58,10 @@ jobs:
 
       - name: Run shellcheck
         run: make shell-lint
+
+  notify-on-failure:
+    if: always() && github.event_name == 'schedule' && contains(needs.*.result, 'failure')
+    needs: [shell-lint]
+    uses: ./.github/workflows/_notify-on-failure.yaml
+    secrets:
+      SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}

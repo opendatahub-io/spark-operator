@@ -1,6 +1,7 @@
 package fixture
 
 import (
+	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	"github.com/opendatahub-io/odh-platform-utilities/api/common"
@@ -19,6 +20,24 @@ func WithName(name string) SparkOperatorOption {
 func WithManagementState(state common.ManagementState) SparkOperatorOption {
 	return func(cr *platformv1alpha1.SparkOperator) {
 		cr.Spec.ManagementState = state
+	}
+}
+
+func WithJobNamespaces(namespaces ...string) SparkOperatorOption {
+	return func(cr *platformv1alpha1.SparkOperator) {
+		if cr.Spec.Spark == nil {
+			cr.Spec.Spark = &platformv1alpha1.SparkSpec{}
+		}
+		cr.Spec.Spark.JobNamespaces = append([]string(nil), namespaces...)
+	}
+}
+
+func WithControllerResources(rr corev1.ResourceRequirements) SparkOperatorOption {
+	return func(cr *platformv1alpha1.SparkOperator) {
+		if cr.Spec.Spark == nil {
+			cr.Spec.Spark = &platformv1alpha1.SparkSpec{}
+		}
+		cr.Spec.Spark.ControllerResources = rr.DeepCopy()
 	}
 }
 

@@ -18,11 +18,13 @@ package controller
 
 import (
 	"context"
+	"crypto/tls"
 	"encoding/json"
 	"flag"
 	"fmt"
 	"os"
 	"slices"
+	"strings"
 	"time"
 
 	// Import all Kubernetes client auth plugins (e.g. Azure, GCP, OIDC, etc.)
@@ -44,6 +46,7 @@ import (
 	networkingv1 "k8s.io/api/networking/v1"
 	policyv1 "k8s.io/api/policy/v1"
 	"k8s.io/apimachinery/pkg/labels"
+	"k8s.io/apimachinery/pkg/util/validation"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/utils/clock"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -86,6 +89,7 @@ var (
 	controllerThreads        int
 	cacheSyncTimeout         time.Duration
 	maxTrackedExecutorPerApp int
+	defaultTimeToLiveSeconds int64
 
 	// Driver PDB feature gate. When enabled, the controller creates a
 	// PodDisruptionBudget for each SparkApplication that sets
@@ -102,6 +106,10 @@ var (
 	enableBatchScheduler  bool
 	kubeSchedulerNames    []string
 	defaultBatchScheduler string
+
+	// Fallback service account for Spark driver pods when the custom resource does
+	// not specify one. Empty by default, which preserves existing behavior.
+	defaultServiceAccount string
 
 	// Spark web UI service and ingress
 	enableUIService    bool
@@ -136,8 +144,6 @@ var (
 	healthProbeBindAddress                      string
 	pprofBindAddress                            string
 	secureMetrics                               bool
-	tlsMinVersion                               string
-	tlsCipherSuites                             []string
 	scheduledSparkApplicationTimestampPrecision string
 	development                                 bool
 	zapOptions                                  = logzap.Options{}
@@ -193,6 +199,18 @@ func NewStartCommand() *cobra.Command {
 				}
 			}
 
+			// A negative TTL is never meaningful; reject it regardless of the gate.
+			// Zero is the valid "off" sentinel and is left untouched.
+			if defaultTimeToLiveSeconds < 0 {
+				return fmt.Errorf("invalid value %d for --default-time-to-live-seconds, must not be negative", defaultTimeToLiveSeconds)
+			}
+
+			if defaultServiceAccount != "" {
+				if errs := validation.IsDNS1123Subdomain(defaultServiceAccount); len(errs) > 0 {
+					return fmt.Errorf("invalid value %q for --default-service-account: %s", defaultServiceAccount, strings.Join(errs, ", "))
+				}
+			}
+
 			return nil
 		},
 		Run: func(_ *cobra.Command, args []string) {
@@ -206,6 +224,14 @@ func NewStartCommand() *cobra.Command {
 	command.Flags().StringVar(&namespaceSelector, "namespace-selector", "", "Label selector for namespaces to watch (e.g., 'spark-operator=enabled,env in (prod,staging)'). Namespaces matching this selector will be watched in addition to those specified via --namespaces. Requires ClusterRole permission to list and watch namespaces.")
 	command.Flags().DurationVar(&cacheSyncTimeout, "cache-sync-timeout", 30*time.Second, "Informer cache sync timeout.")
 	command.Flags().IntVar(&maxTrackedExecutorPerApp, "max-tracked-executor-per-app", 1000, "The maximum number of tracked executors per SparkApplication.")
+	command.Flags().Int64Var(&defaultTimeToLiveSeconds, "default-time-to-live-seconds", 0,
+		"Default Time-To-Live in seconds applied to terminated SparkApplications that do "+
+			"not set spec.timeToLiveSeconds. Requires the DefaultTimeToLive feature gate. "+
+			"0 (default) disables it; a negative value is rejected.")
+	command.Flags().StringVar(&defaultServiceAccount, "default-service-account", "",
+		"The service account used by the Spark driver pod and the Spark Connect server pod "+
+			"when neither the custom resource nor its pod template specifies one. Leave empty "+
+			"to disable the fallback, in which case the namespace's default service account is used.")
 	command.Flags().BoolVar(&enableDriverPDB, "enable-driver-pdb", false,
 		"Enable creation of a PodDisruptionBudget for Spark driver pods. "+
 			"Each SparkApplication must additionally opt in via "+
@@ -249,13 +275,6 @@ func NewStartCommand() *cobra.Command {
 
 	command.Flags().StringVar(&healthProbeBindAddress, "health-probe-bind-address", ":8081", "The address the probe endpoint binds to.")
 	command.Flags().BoolVar(&secureMetrics, "secure-metrics", false, "If set the metrics endpoint is served securely")
-	command.Flags().StringVar(&tlsMinVersion, "metric-tls-min-version", "VersionTLS12",
-		"Minimum TLS version for the metrics server. "+
-			"Possible values: VersionTLS12, VersionTLS13")
-	command.Flags().StringSliceVar(&tlsCipherSuites, "metric-tls-cipher-suites", []string{},
-		"Comma-separated list of cipher suites for the metrics server. "+
-			"If omitted, the default Go cipher suites are used. "+
-			"Applies to TLS 1.2 only; TLS 1.3 cipher suites are not configurable in Go. Possible values listed at https://pkg.go.dev/crypto/tls#CipherSuites")
 
 	command.Flags().StringVar(&pprofBindAddress, "pprof-bind-address", "0", "The address the pprof endpoint binds to. "+
 		"If not set, it will be 0 in order to disable the pprof server")
@@ -286,6 +305,16 @@ func NewStartCommand() *cobra.Command {
 func start() {
 	setupLog()
 
+	// Normalize the configured TTL before passing it to the controller so downstream
+	// cleanup logic does not need to depend on the global feature gate.
+	if !features.Enabled(features.DefaultTimeToLive) {
+		if defaultTimeToLiveSeconds > 0 {
+			logger.Info("Ignoring --default-time-to-live-seconds because the DefaultTimeToLive feature gate is disabled",
+				"defaultTimeToLiveSeconds", defaultTimeToLiveSeconds)
+		}
+		defaultTimeToLiveSeconds = 0
+	}
+
 	// Create the client rest config. Use kubeConfig if given, otherwise assume in-cluster.
 	cfg, err := ctrl.GetConfig()
 	cfg.WarningHandler = rest.NoWarnings{}
@@ -297,12 +326,13 @@ func start() {
 	cfg.QPS = kubeAPIQPS
 	cfg.Burst = kubeAPIBurst
 
-	// Create the manager.
-	tlsOptions, err := operatortls.SetupTLS(tlsMinVersion, tlsCipherSuites)
-	if err != nil {
-		logger.Error(err, "Failed to set up TLS")
-		os.Exit(1)
-	}
+	// Fetch cluster TLS security profile (OpenShift) or use hardened defaults.
+	profileResult := operatortls.FetchTLSProfile(cfg, operatorscheme.ControllerScheme)
+	tlsOptions := profileResult.TLSOpts
+	tlsOptions = append(tlsOptions, func(c *tls.Config) {
+		c.NextProtos = []string{"h2", "http/1.1"}
+	})
+
 	mgr, err := ctrl.NewManager(cfg, ctrl.Options{
 		Scheme: operatorscheme.ControllerScheme,
 		Cache:  newCacheOptions(),
@@ -378,9 +408,13 @@ func start() {
 		}
 	}
 
-	ctx := ctrl.SetupSignalHandler()
+	ctx, err := operatortls.SetupProfileWatcherRestart(ctrl.SetupSignalHandler(), mgr, profileResult)
+	if err != nil {
+		logger.Error(err, "Failed to set up TLS security profile watcher")
+		os.Exit(1)
+	}
 
-	sparkSubmitter, err := newSparkSubmitter(ctx)
+	sparkSubmitter, err := newSparkSubmitter(ctx, tlsOptions)
 	if err != nil {
 		logger.Error(err, "Failed to create spark submitter")
 		os.Exit(1)
@@ -543,6 +577,8 @@ func newSparkApplicationReconcilerOptions() sparkapplication.Options {
 		SparkExecutorMetrics:         sparkExecutorMetrics,
 		MaxTrackedExecutorPerApp:     maxTrackedExecutorPerApp,
 		EnableDriverPDB:              enableDriverPDB,
+		DefaultTimeToLiveSeconds:     defaultTimeToLiveSeconds,
+		DefaultServiceAccount:        defaultServiceAccount,
 	}
 	if enableBatchScheduler {
 		options.KubeSchedulerNames = kubeSchedulerNames
@@ -561,13 +597,14 @@ func newScheduledSparkApplicationReconcilerOptions() scheduledsparkapplication.O
 
 func newSparkConnectReconcilerOptions() sparkconnect.Options {
 	options := sparkconnect.Options{
-		Namespaces:        namespaces,
-		NamespaceSelector: namespaceSelector,
+		Namespaces:            namespaces,
+		NamespaceSelector:     namespaceSelector,
+		DefaultServiceAccount: defaultServiceAccount,
 	}
 	return options
 }
 
-func newSparkSubmitter(ctx context.Context) (sparkapplication.SparkApplicationSubmitter, error) {
+func newSparkSubmitter(ctx context.Context, tlsOpts []func(*tls.Config)) (sparkapplication.SparkApplicationSubmitter, error) {
 	if !features.Enabled(features.RestSubmitter) {
 		return &sparkapplication.SparkSubmitter{}, nil
 	}
@@ -588,6 +625,7 @@ func newSparkSubmitter(ctx context.Context) (sparkapplication.SparkApplicationSu
 		RequestTimeout:  submitterRequestTimeout,
 		InitialBackoff:  submitterInitialBackoff,
 		TLS:             tlsCfg,
+		TLSOpts:         tlsOpts,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to initialize RestSubmitter: %w", err)

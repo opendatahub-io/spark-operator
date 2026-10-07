@@ -74,13 +74,13 @@ jobs:
         if: ${{ env.MODE == 'local' }}
         shell: bash
         run: |
-          PLATFORM="linux/${ARCH}" make -C examples/openshift docker-build-file DOCKERFILE="${{ inputs.dockerfile }}" IMAGE="${FULL_IMAGE}"
+          PLATFORM="linux/${ARCH}" make -C test/e2e/rhoai docker-build-file DOCKERFILE="${{ inputs.dockerfile }}" IMAGE="${FULL_IMAGE}"
 
       - name: Kind load image with Make (MODE=local)
         if: ${{ env.MODE == 'local' }}
         shell: bash
         run: |
-          make -C examples/openshift kind-load-image-file IMAGE="${FULL_IMAGE}"
+          make -C test/e2e/rhoai kind-load-image-file IMAGE="${FULL_IMAGE}"
 
       - name: Export local image env (MODE=local)
         if: ${{ env.MODE == 'local' }}
@@ -88,8 +88,10 @@ jobs:
         run: |
           echo "SPARK_OPERATOR_IMAGE=${FULL_IMAGE}" >> "$GITHUB_ENV"
 
-      - name: Run kustomize e2e tests
-        run: make -C examples/openshift e2e-kustomize-test
+      - name: Run midstream RHOAI e2e tests
+        run: make -C test/e2e/rhoai e2e-rhoai-test
+        env:
+          INSTALL_METHOD: kustomize
 
       - name: Debug - Show cluster state
         if: failure()
