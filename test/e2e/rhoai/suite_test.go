@@ -38,6 +38,7 @@ import (
 	admissionregistrationv1 "k8s.io/api/admissionregistration/v1"
 	corev1 "k8s.io/api/core/v1"
 	discoveryv1 "k8s.io/api/discovery/v1"
+	networkingv1 "k8s.io/api/networking/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -180,6 +181,8 @@ var _ = BeforeSuite(func() {
 	default:
 		installWithHelm()
 	}
+
+	ensureKindCompatibleOperatorIngress(context.Background())
 
 	By("Waiting for the webhooks to be ready")
 	mutatingWebhookKey := types.NamespacedName{Name: mutatingWebhookName}
@@ -428,6 +431,67 @@ func runCommand(name string, args ...string) (string, error) {
 	cmd := exec.Command(name, args...)
 	output, err := cmd.CombinedOutput()
 	return string(output), err
+}
+
+func runningOnOpenShift() bool {
+	groups, err := clientset.Discovery().ServerGroups()
+	if err != nil {
+		return false
+	}
+	for _, g := range groups.Groups {
+		if g.Name == "route.openshift.io" {
+			return true
+		}
+	}
+	return false
+}
+
+// ensureKindCompatibleOperatorIngress adds an allow-all ingress NP for operator
+// pods on non-OpenShift clusters so the metrics NP doesn't become the sole
+// Ingress isolator (which would block apiserver ProxyGet on KIND).
+func ensureKindCompatibleOperatorIngress(ctx context.Context) {
+	if runningOnOpenShift() {
+		return
+	}
+
+	metricsNP := &networkingv1.NetworkPolicy{}
+	err := k8sClient.Get(ctx, types.NamespacedName{
+		Name:      "spark-operator-allow-metrics",
+		Namespace: ReleaseNamespace,
+	}, metricsNP)
+	if apierrors.IsNotFound(err) {
+		return
+	}
+	Expect(err).NotTo(HaveOccurred())
+
+	By("Applying e2e companion NetworkPolicy so KIND is not isolated by spark-operator-allow-metrics alone")
+	companion := &networkingv1.NetworkPolicy{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "spark-operator-e2e-allow-operator-ingress",
+			Namespace: ReleaseNamespace,
+		},
+		Spec: networkingv1.NetworkPolicySpec{
+			PodSelector: metav1.LabelSelector{
+				MatchLabels: map[string]string{
+					"app.kubernetes.io/name": "spark-operator",
+				},
+			},
+			PolicyTypes: []networkingv1.PolicyType{networkingv1.PolicyTypeIngress},
+			// Empty rule = allow all ingress (OR with metrics NP).
+			Ingress: []networkingv1.NetworkPolicyIngressRule{{}},
+		},
+	}
+	existing := &networkingv1.NetworkPolicy{}
+	err = k8sClient.Get(ctx, types.NamespacedName{
+		Name: companion.Name, Namespace: companion.Namespace,
+	}, existing)
+	if apierrors.IsNotFound(err) {
+		Expect(k8sClient.Create(ctx, companion)).NotTo(HaveOccurred())
+		return
+	}
+	Expect(err).NotTo(HaveOccurred())
+	companion.ResourceVersion = existing.ResourceVersion
+	Expect(k8sClient.Update(ctx, companion)).NotTo(HaveOccurred())
 }
 
 func waitForMutatingWebhookReady(ctx context.Context, key types.NamespacedName) error {

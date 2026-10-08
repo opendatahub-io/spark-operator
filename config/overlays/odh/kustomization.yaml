@@ -16,6 +16,7 @@ resources:
   - ../../spark-rbac # SA/Role/RoleBinding for Spark driver pods
   - ../../prometheus
   - networkpolicy.yaml
+  - networkpolicy-metrics.yaml
 
 # 3. Delete the Namespace resource (ODH operator manages it)
 #    Add monitoring label to PodMonitor
