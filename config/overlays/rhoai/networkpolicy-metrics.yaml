@@ -3,7 +3,8 @@ kind: NetworkPolicy
 metadata:
   name: spark-operator-allow-metrics
 spec:
-  # Allow monitoring namespaces (cluster + user-workload) to scrape :8080.
+  # 8080: current HTTP metrics; 8443: future secure metrics — monitoring namespaces only.
+  # 8081: health probes — port-scoped, no peer selector (kubelet not selectable).
   podSelector:
     matchLabels:
       app.kubernetes.io/name: spark-operator
@@ -13,7 +14,12 @@ spec:
     - ports:
         - port: 8080
           protocol: TCP
+        - port: 8443
+          protocol: TCP
       from:
         - namespaceSelector:
             matchLabels:
               network.openshift.io/policy-group: monitoring
+    - ports:
+        - port: 8081
+          protocol: TCP

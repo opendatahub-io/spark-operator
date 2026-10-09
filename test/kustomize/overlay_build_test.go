@@ -223,7 +223,7 @@ func TestOverlayBuilds(t *testing.T) {
 					"allow-internal ports must be Spark RPC/UI/Connect only")
 			})
 
-			t.Run("MetricsScrapeNetworkPolicy", func(t *testing.T) {
+			t.Run("OperatorMetricsNetworkPolicy", func(t *testing.T) {
 				obj := overlayFindResource(resources, "NetworkPolicy", "spark-operator-allow-metrics")
 				require.NotNil(t, obj, "overlay %s must include spark-operator-allow-metrics", overlay.name)
 				np := overlayConvertTo[networkingv1.NetworkPolicy](t, obj)
@@ -235,22 +235,32 @@ func TestOverlayBuilds(t *testing.T) {
 					"metrics NP must not select Spark job pods")
 
 				require.Equal(t, []networkingv1.PolicyType{networkingv1.PolicyTypeIngress}, np.Spec.PolicyTypes)
-				require.Len(t, np.Spec.Ingress, 1, "metrics NP must be a single ingress rule")
-				rule := np.Spec.Ingress[0]
-				require.Len(t, rule.Ports, 1)
-				require.NotNil(t, rule.Ports[0].Port)
-				assert.Equal(t, int32(8080), rule.Ports[0].Port.IntVal)
-				require.NotNil(t, rule.Ports[0].Protocol)
-				assert.Equal(t, corev1.ProtocolTCP, *rule.Ports[0].Protocol)
+				require.Len(t, np.Spec.Ingress, 2, "metrics NP must have metrics + health ingress rules")
 
-				require.Len(t, rule.From, 1, "metrics NP must have exactly one from clause")
-				from := rule.From[0]
+				metricsRule := np.Spec.Ingress[0]
+				require.Len(t, metricsRule.Ports, 2, "metrics rule must allow 8080 + 8443")
+				metricsPorts := []int32{metricsRule.Ports[0].Port.IntVal, metricsRule.Ports[1].Port.IntVal}
+				assert.ElementsMatch(t, []int32{8080, 8443}, metricsPorts)
+				for _, p := range metricsRule.Ports {
+					require.NotNil(t, p.Protocol)
+					assert.Equal(t, corev1.ProtocolTCP, *p.Protocol)
+				}
+				require.Len(t, metricsRule.From, 1, "metrics rule must have exactly one from clause")
+				from := metricsRule.From[0]
 				assert.Nil(t, from.PodSelector, "do not allow all pods via empty podSelector")
 				require.NotNil(t, from.NamespaceSelector)
 				assert.Equal(t, map[string]string{"network.openshift.io/policy-group": "monitoring"},
 					from.NamespaceSelector.MatchLabels,
-					"8080 must be limited to monitoring namespaces")
+					"metrics ports must be limited to monitoring namespaces")
 				assert.Empty(t, from.NamespaceSelector.MatchExpressions)
+
+				healthRule := np.Spec.Ingress[1]
+				require.Len(t, healthRule.Ports, 1)
+				require.NotNil(t, healthRule.Ports[0].Port)
+				assert.Equal(t, int32(8081), healthRule.Ports[0].Port.IntVal)
+				require.NotNil(t, healthRule.Ports[0].Protocol)
+				assert.Equal(t, corev1.ProtocolTCP, *healthRule.Ports[0].Protocol)
+				assert.Empty(t, healthRule.From, "8081 health must be port-scoped only")
 			})
 
 			t.Run("MetricsPortMatchesPodMonitorAndDeployments", func(t *testing.T) {
@@ -281,7 +291,7 @@ func TestOverlayBuilds(t *testing.T) {
 					}
 					require.NotNil(t, metricsPort, "%s must expose named port metrics", depName)
 					assert.Equal(t, int32(8080), metricsPort.ContainerPort,
-						"%s metrics port must be 8080 to match spark-operator-allow-metrics", depName)
+						"%s metrics port must be 8080", depName)
 				}
 			})
 

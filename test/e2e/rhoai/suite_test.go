@@ -477,8 +477,7 @@ func ensureKindCompatibleOperatorIngress(ctx context.Context) {
 				},
 			},
 			PolicyTypes: []networkingv1.PolicyType{networkingv1.PolicyTypeIngress},
-			// Empty rule = allow all ingress (OR with metrics NP).
-			Ingress: []networkingv1.NetworkPolicyIngressRule{{}},
+			Ingress:     []networkingv1.NetworkPolicyIngressRule{{}},
 		},
 	}
 	existing := &networkingv1.NetworkPolicy{}
