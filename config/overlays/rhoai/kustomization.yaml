@@ -17,6 +17,8 @@ resources:
   - ../../prometheus
   - networkpolicy.yaml
   - networkpolicy-metrics.yaml
+  - networkpolicy-egress.yaml
+  - networkpolicy-webhook.yaml
 
 # 3. Delete the Namespace resource (RHOAI operator manages it)
 #    Add monitoring label to PodMonitor

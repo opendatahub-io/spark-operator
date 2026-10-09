@@ -1,0 +1,14 @@
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: spark-operator-allow-egress
+spec:
+  # Allow-all egress (ADR-0016): the controller resolves user-specified
+  # dependency URLs, so egress destinations cannot be enumerated.
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: spark-operator
+  policyTypes:
+    - Egress
+  egress:
+    - {}
