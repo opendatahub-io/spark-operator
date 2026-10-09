@@ -1,0 +1,3 @@
+# Benchmark results are generated per-run; don't commit them.
+*
+!.gitignore
