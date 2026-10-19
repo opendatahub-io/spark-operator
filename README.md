@@ -1,4 +1,5 @@
 # Kubeflow Spark Operator
+<!-- Test PR for early-gate pipelines -->
 
 [![GitHub release](https://img.shields.io/github/v/release/kubeflow/spark-operator)](https://github.com/kubeflow/spark-operator/releases)
 [![Integration Test](https://github.com/kubeflow/spark-operator/actions/workflows/integration.yaml/badge.svg)](https://github.com/kubeflow/spark-operator/actions/workflows/integration.yaml)
