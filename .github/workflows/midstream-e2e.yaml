@@ -117,6 +117,8 @@ jobs:
   notify-on-failure:
     if: always() && github.event_name == 'schedule' && contains(needs.*.result, 'failure')
     needs: [midstream-e2e-test]
+    permissions:
+      issues: write
     uses: ./.github/workflows/_notify-on-failure.yaml
     secrets:
       SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
