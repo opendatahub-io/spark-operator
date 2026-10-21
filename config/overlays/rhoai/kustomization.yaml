@@ -41,10 +41,13 @@ patches:
       name: spark-operator-podmonitor
 
 # 4. Add RHOAI-specific labels
+# Note: includeSelectors: true preserves legacy selector labels from RHOAI 3.5
+# for backward compatibility during 3.5→3.6 upgrades (RHAI-10913)
 labels:
   - pairs:
-      app.kubernetes.io/part-of: rhoai
-    includeSelectors: false
+      app.kubernetes.io/part-of: sparkoperator
+      app.opendatahub.io/sparkoperator: "true"
+    includeSelectors: true
 
 # Image substitution is handled by RHOAI operator's ApplyParams function
 # which replaces $(SPARK_OPERATOR_CONTROLLER_IMAGE) and $(SPARK_OPERATOR_WEBHOOK_IMAGE)

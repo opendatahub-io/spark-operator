@@ -41,10 +41,13 @@ patches:
       name: spark-operator-podmonitor
 
 # 4. Add ODH-specific labels
+# Note: includeSelectors: true preserves legacy selector labels from ODH 2.x
+# for backward compatibility during upgrades (RHAI-10913)
 labels:
   - pairs:
-      app.kubernetes.io/part-of: opendatahub
-    includeSelectors: false
+      app.kubernetes.io/part-of: sparkoperator
+      app.opendatahub.io/sparkoperator: "true"
+    includeSelectors: true
 
 # Image substitution is handled by ODH operator's ApplyParams function
 # which replaces $(SPARK_OPERATOR_CONTROLLER_IMAGE) and $(SPARK_OPERATOR_WEBHOOK_IMAGE)
