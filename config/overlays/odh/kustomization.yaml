@@ -22,7 +22,7 @@ resources:
 
 # 3. Delete the Namespace resource (ODH operator manages it)
 #    Add monitoring label to PodMonitor
-#    Preserve legacy Deployment selector labels for 2.x→3.x upgrade (RHAI-10913)
+#    Preserve legacy Deployment selector labels for 3.4/3.5→3.6 upgrade (RHAI-10913)
 patches:
   - path: delete-namespace.yaml
   - path: networkpolicy-rbac-patch.yaml
@@ -40,9 +40,9 @@ patches:
       version: v1
       kind: PodMonitor
       name: spark-operator-podmonitor
-  # Preserve ODH 2.x Deployment selector labels for upgrade compatibility.
-  # ODH 2.x in-tree component added these via kustomize.WithLabel(), which
-  # included them in deployment selectors. Since selectors are immutable,
+  # Preserve ODH 3.4/3.5 Deployment selector labels for upgrade compatibility.
+  # ODH 3.4/3.5 component used kustomize.WithLabel(), which included these
+  # labels in deployment selectors. Since selectors are immutable,
   # we must preserve them to avoid upgrade failures (RHAI-10913).
   # Using JSON6902 patches instead of includeSelectors: true to avoid
   # polluting NetworkPolicy podSelectors (which would break Spark jobs).

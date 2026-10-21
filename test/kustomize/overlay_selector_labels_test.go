@@ -15,9 +15,9 @@ limitations under the License.
 */
 
 // Regression tests for RHAI-10913: Preserve deployment selector labels for
-// RHOAI 3.5.x → 3.6 and ODH 2.x → 3.x upgrades.
+// RHOAI 3.5.x → 3.6 and ODH 3.4/3.5 → 3.6 upgrades.
 //
-// RHOAI 3.5 and ODH 2.x created Deployments with 6 selector labels via
+// RHOAI 3.5 and ODH 3.4/3.5 created Deployments with 6 selector labels via
 // kustomize.WithLabel(). Since Kubernetes deployment selectors are immutable,
 // upgrades fail unless we preserve those labels with JSON6902 patches.
 package kustomize_test
@@ -92,14 +92,14 @@ func TestRHOAIOverlayPreserves35SelectorLabels(t *testing.T) {
 	}
 }
 
-// TestODHOverlayPreserves2xSelectorLabels verifies that the ODH overlay
-// preserves the 6 selector labels that ODH 2.x created.
-func TestODHOverlayPreserves2xSelectorLabels(t *testing.T) {
+// TestODHOverlayPreserves34SelectorLabels verifies that the ODH overlay
+// preserves the 6 selector labels that ODH 3.4/3.5 created.
+func TestODHOverlayPreserves34SelectorLabels(t *testing.T) {
 	repoRoot := filepath.Join("..", "..")
 	overlayDir := filepath.Join(repoRoot, "config", "overlays", "odh")
 	resources := buildOverlay(t, overlayDir)
 
-	// ODH 2.x in-tree component created these selector labels
+	// ODH 3.4/3.5 component created these selector labels
 	expectedLabels := map[string]string{
 		"app.kubernetes.io/name":           "spark-operator",
 		"app.kubernetes.io/instance":       "spark-operator",
@@ -136,7 +136,7 @@ func TestODHOverlayPreserves2xSelectorLabels(t *testing.T) {
 			expected["app.kubernetes.io/component"] = tc.component
 
 			assert.Equal(t, expected, deployment.Spec.Selector.MatchLabels,
-				"deployment %s selector labels must match ODH 2.x for upgrade compatibility", tc.name)
+				"deployment %s selector labels must match ODH 3.4/3.5 for upgrade compatibility", tc.name)
 
 			for key, expectedValue := range expected {
 				actualValue, exists := deployment.Spec.Template.Labels[key]
