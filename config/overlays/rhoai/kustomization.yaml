@@ -22,6 +22,7 @@ resources:
 
 # 3. Delete the Namespace resource (RHOAI operator manages it)
 #    Add monitoring label to PodMonitor
+#    Preserve legacy Deployment selector labels for 3.5→3.6 upgrade (RHAI-10913)
 patches:
   - path: delete-namespace.yaml
   - path: networkpolicy-rbac-patch.yaml
@@ -39,15 +40,50 @@ patches:
       version: v1
       kind: PodMonitor
       name: spark-operator-podmonitor
+  # Preserve RHOAI 3.5 Deployment selector labels for upgrade compatibility.
+  # RHOAI 3.5 in-tree component added these via kustomize.WithLabel(), which
+  # included them in deployment selectors. Since selectors are immutable,
+  # we must preserve them to avoid upgrade failures (RHAI-10913).
+  # Using JSON6902 patches instead of includeSelectors: true to avoid
+  # polluting NetworkPolicy podSelectors (which would break Spark jobs).
+  - target:
+      kind: Deployment
+      name: spark-operator-controller
+    patch: |-
+      - op: add
+        path: /spec/selector/matchLabels/app.kubernetes.io~1part-of
+        value: sparkoperator
+      - op: add
+        path: /spec/selector/matchLabels/app.opendatahub.io~1sparkoperator
+        value: "true"
+      - op: add
+        path: /spec/template/metadata/labels/app.kubernetes.io~1part-of
+        value: sparkoperator
+      - op: add
+        path: /spec/template/metadata/labels/app.opendatahub.io~1sparkoperator
+        value: "true"
+  - target:
+      kind: Deployment
+      name: spark-operator-webhook
+    patch: |-
+      - op: add
+        path: /spec/selector/matchLabels/app.kubernetes.io~1part-of
+        value: sparkoperator
+      - op: add
+        path: /spec/selector/matchLabels/app.opendatahub.io~1sparkoperator
+        value: "true"
+      - op: add
+        path: /spec/template/metadata/labels/app.kubernetes.io~1part-of
+        value: sparkoperator
+      - op: add
+        path: /spec/template/metadata/labels/app.opendatahub.io~1sparkoperator
+        value: "true"
 
-# 4. Add RHOAI-specific labels
-# Note: includeSelectors: true preserves legacy selector labels from RHOAI 3.5
-# for backward compatibility during 3.5→3.6 upgrades (RHAI-10913)
+# 4. Add RHOAI-specific labels (metadata only, not selectors)
 labels:
   - pairs:
-      app.kubernetes.io/part-of: sparkoperator
-      app.opendatahub.io/sparkoperator: "true"
-    includeSelectors: true
+      app.kubernetes.io/part-of: rhoai
+    includeSelectors: false
 
 # Image substitution is handled by RHOAI operator's ApplyParams function
 # which replaces $(SPARK_OPERATOR_CONTROLLER_IMAGE) and $(SPARK_OPERATOR_WEBHOOK_IMAGE)
