@@ -109,6 +109,7 @@ var (
 
 	healthProbeBindAddress string
 	secureMetrics          bool
+	metricsCertDir         string
 	development            bool
 	zapOptions             = logzap.Options{}
 )
@@ -171,6 +172,7 @@ func NewStartCommand() *cobra.Command {
 
 	command.Flags().StringVar(&healthProbeBindAddress, "health-probe-bind-address", ":8081", "The address the probe endpoint binds to.")
 	command.Flags().BoolVar(&secureMetrics, "secure-metrics", false, "If set the metrics endpoint is served securely")
+	command.Flags().StringVar(&metricsCertDir, "metrics-cert-dir", "", "Directory containing tls.crt and tls.key for the metrics server. If empty and --secure-metrics is set, a self-signed certificate is generated.")
 
 	flagSet := flag.NewFlagSet("controller", flag.ExitOnError)
 	ctrl.RegisterFlags(flagSet)
@@ -196,14 +198,10 @@ func start() {
 	// Create the manager.
 	tlsOptions, profileResult := newTLSOptions(cfg)
 	mgr, err := ctrl.NewManager(cfg, ctrl.Options{
-		Scheme: operatorscheme.WebhookScheme,
-		Cache:  newCacheOptions(),
-		Client: client.Options{},
-		Metrics: metricsserver.Options{
-			BindAddress:   metricsBindAddress,
-			SecureServing: secureMetrics,
-			TLSOpts:       tlsOptions,
-		},
+		Scheme:  operatorscheme.WebhookScheme,
+		Cache:   newCacheOptions(),
+		Client:  client.Options{},
+		Metrics: newMetricsOptions(metricsBindAddress, secureMetrics, metricsCertDir, tlsOptions),
 		WebhookServer: ctrlwebhook.NewServer(ctrlwebhook.Options{
 			Port:     webhookPort,
 			CertDir:  webhookCertDir,
@@ -419,4 +417,15 @@ func newCacheOptions() cache.Options {
 	}
 
 	return options
+}
+
+// newMetricsOptions builds the metrics server configuration from the provided
+// flags. Extracted as a helper so it can be unit-tested independently.
+func newMetricsOptions(bindAddress string, secure bool, certDir string, tlsOpts []func(*tls.Config)) metricsserver.Options {
+	return metricsserver.Options{
+		BindAddress:   bindAddress,
+		SecureServing: secure,
+		CertDir:       certDir,
+		TLSOpts:       tlsOpts,
+	}
 }

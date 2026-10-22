@@ -1,0 +1,41 @@
+# Metrics Services for secure (HTTPS) Prometheus scraping.
+# The service.beta.openshift.io/serving-cert-secret-name annotation causes the
+# OpenShift service-ca operator to generate a TLS Secret signed by the cluster
+# service CA, which is then mounted into the pods via the deployment patches.
+apiVersion: v1
+kind: Service
+metadata:
+  name: spark-operator-controller-metrics
+  annotations:
+    service.beta.openshift.io/serving-cert-secret-name: spark-operator-controller-metrics-certs
+  labels:
+    app.kubernetes.io/name: spark-operator
+    app.kubernetes.io/component: controller
+spec:
+  selector:
+    app.kubernetes.io/name: spark-operator
+    app.kubernetes.io/component: controller
+  ports:
+    - name: metrics
+      port: 8080
+      targetPort: metrics
+      protocol: TCP
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: spark-operator-webhook-metrics
+  annotations:
+    service.beta.openshift.io/serving-cert-secret-name: spark-operator-webhook-metrics-certs
+  labels:
+    app.kubernetes.io/name: spark-operator
+    app.kubernetes.io/component: webhook
+spec:
+  selector:
+    app.kubernetes.io/name: spark-operator
+    app.kubernetes.io/component: webhook
+  ports:
+    - name: metrics
+      port: 8080
+      targetPort: metrics
+      protocol: TCP
