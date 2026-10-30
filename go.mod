@@ -19,15 +19,16 @@ require (
 	go.uber.org/zap v1.27.0
 	golang.org/x/mod v0.36.0
 	golang.org/x/time v0.14.0
-	k8s.io/api v0.36.2
-	k8s.io/apiextensions-apiserver v0.36.2
-	k8s.io/apimachinery v0.36.2
-	k8s.io/apiserver v0.36.2
-	k8s.io/client-go v0.36.2
-	k8s.io/component-base v0.36.2
-	k8s.io/klog/v2 v2.140.0
-	k8s.io/kube-openapi v0.0.0-20260317180543-43fb72c5454a
-	k8s.io/utils v0.0.0-20260210185600-b8788abfbbc2
+	gopkg.in/inf.v0 v0.9.1
+	k8s.io/api v0.35.4
+	k8s.io/apiextensions-apiserver v0.35.4
+	k8s.io/apimachinery v0.35.4
+	k8s.io/apiserver v0.35.4
+	k8s.io/client-go v0.35.4
+	k8s.io/component-base v0.35.4
+	k8s.io/klog/v2 v2.130.1
+	k8s.io/kube-openapi v0.0.0-20250910181357-589584f1c912
+	k8s.io/utils v0.0.0-20251002143259-bc988d571ff4
 	sigs.k8s.io/controller-runtime v0.23.3
 	sigs.k8s.io/scheduler-plugins v0.34.7
 	sigs.k8s.io/yaml v1.6.0
@@ -72,6 +73,7 @@ require (
 	github.com/spf13/afero v1.15.0 // indirect
 	github.com/spf13/cast v1.10.0 // indirect
 	github.com/spf13/pflag v1.0.10 // indirect
+	github.com/stretchr/objx v0.5.2 // indirect
 	github.com/subosito/gotenv v1.6.0 // indirect
 	github.com/x448/float16 v0.8.4 // indirect
 	go.opentelemetry.io/otel v1.43.0 // indirect
@@ -89,7 +91,6 @@ require (
 	gomodules.xyz/jsonpatch/v2 v2.4.0 // indirect
 	google.golang.org/protobuf v1.36.12-0.20260120151049-f2248ac996af // indirect
 	gopkg.in/evanphx/json-patch.v4 v4.13.0 // indirect
-	gopkg.in/inf.v0 v0.9.1 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 	k8s.io/code-generator v0.35.4 // indirect
 	k8s.io/gengo/v2 v2.0.0-20250922181213-ec3ebc5fd46b // indirect

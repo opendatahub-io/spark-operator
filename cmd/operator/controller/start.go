@@ -1,11 +1,11 @@
 /*
-Copyright 2024 The Kubeflow authors.
+Copyright 2024 The Kubeflow Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
 You may obtain a copy of the License at
 
-    https://www.apache.org/licenses/LICENSE-2.0
+    http://www.apache.org/licenses/LICENSE-2.0
 
 Unless required by applicable law or agreed to in writing, software
 distributed under the License is distributed on an "AS IS" BASIS,
@@ -326,13 +326,12 @@ func start() {
 	cfg.QPS = kubeAPIQPS
 	cfg.Burst = kubeAPIBurst
 
-	// Fetch cluster TLS security profile (OpenShift) or use hardened defaults.
-	profileResult := operatortls.FetchTLSProfile(cfg, operatorscheme.ControllerScheme)
-	tlsOptions := profileResult.TLSOpts
-	tlsOptions = append(tlsOptions, func(c *tls.Config) {
-		c.NextProtos = []string{"h2", "http/1.1"}
-	})
-
+	// Create the manager.
+	tlsOptions, err := operatortls.SetupTLS("metric", tlsMinVersion, tlsCipherSuites)
+	if err != nil {
+		logger.Error(err, "Failed to set up TLS")
+		os.Exit(1)
+	}
 	mgr, err := ctrl.NewManager(cfg, ctrl.Options{
 		Scheme: operatorscheme.ControllerScheme,
 		Cache:  newCacheOptions(),

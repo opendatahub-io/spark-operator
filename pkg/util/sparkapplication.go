@@ -1,11 +1,11 @@
 /*
-Copyright 2024 The Kubeflow authors.
+Copyright 2024 The Kubeflow Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
 You may obtain a copy of the License at
 
-    https://www.apache.org/licenses/LICENSE-2.0
+    http://www.apache.org/licenses/LICENSE-2.0
 
 Unless required by applicable law or agreed to in writing, software
 distributed under the License is distributed on an "AS IS" BASIS,
@@ -144,6 +144,11 @@ func TimeUntilNextRetryDue(app *v1beta2.SparkApplication) (time.Duration, error)
 		retryInterval = app.Spec.RestartPolicy.OnSubmissionFailureRetryInterval
 	case v1beta2.ApplicationStateFailing:
 		retryInterval = app.Spec.RestartPolicy.OnFailureRetryInterval
+	}
+	// The interval is normally defaulted by the mutating webhook, which does not run when
+	// the webhook is disabled. Fall back to the same default so the retry can proceed.
+	if retryInterval == nil {
+		retryInterval = ptr.To(v1beta2.DefaultRestartPolicyRetryIntervalSeconds)
 	}
 
 	attemptsDone := app.Status.SubmissionAttempts
