@@ -1,0 +1,13 @@
+# ConfigMap that receives the OpenShift service CA bundle.
+# The service.beta.openshift.io/inject-cabundle annotation causes the
+# service-ca operator to populate the "service-ca.crt" key with the CA
+# certificate used to sign serving-cert secrets.
+# Referenced by PodMonitor tlsConfig to verify the metrics TLS certificate.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: spark-operator-metrics-ca-bundle
+  annotations:
+    service.beta.openshift.io/inject-cabundle: "true"
+  labels:
+    app.kubernetes.io/name: spark-operator

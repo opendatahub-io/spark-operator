@@ -1,0 +1,28 @@
+# Enable secure (HTTPS) metrics on the webhook for TLS-Scanner compliance.
+# Uses service-CA-signed certificates from the metrics Service annotation.
+#
+# The volume is required. On OpenShift the service-ca operator creates the
+# secret from the Service annotation, and the kubelet waits until it exists
+# before starting the container. KIND has no service-ca; CI creates a
+# certificate in this secret before applying the overlay.
+- op: add
+  path: /spec/template/spec/containers/0/args/-
+  value: "--secure-metrics=true"
+- op: add
+  path: /spec/template/spec/containers/0/args/-
+  value: "--metrics-cert-dir=/etc/metrics-certs"
+- op: add
+  path: /spec/template/metadata/annotations/prometheus.io~1scheme
+  value: "https"
+- op: add
+  path: /spec/template/spec/containers/0/volumeMounts/-
+  value:
+    name: metrics-serving-certs
+    mountPath: /etc/metrics-certs
+    readOnly: true
+- op: add
+  path: /spec/template/spec/volumes/-
+  value:
+    name: metrics-serving-certs
+    secret:
+      secretName: spark-operator-webhook-metrics-certs

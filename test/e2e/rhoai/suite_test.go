@@ -415,6 +415,7 @@ func installWithKustomize() {
 	}
 
 	ensurePodMonitorCRDForKIND()
+	ensureMetricsTLSSecretsForKIND()
 
 	By("Applying Kustomize manifests")
 	output, err := runCommand("kubectl", "apply", "-k", kustomizeDir, "--server-side=true", "--force-conflicts")
@@ -484,6 +485,22 @@ spec:
 		"crd/podmonitors.monitoring.coreos.com", "--timeout=60s")
 	logf.Log.Info("kubectl wait PodMonitor CRD output", "output", output)
 	Expect(err).NotTo(HaveOccurred(), "PodMonitor CRD not Established: %s", output)
+}
+
+// ensureMetricsTLSSecretsForKIND creates a real tls.crt and tls.key for the
+// metrics Services on clusters without the OpenShift service-ca operator.
+// The overlay mounts those secrets as required volumes. An empty secret is
+// not enough: the metrics server exits if the PEM data is missing.
+func ensureMetricsTLSSecretsForKIND() {
+	if runningOnOpenShift() {
+		return
+	}
+
+	By("Creating self-signed metrics TLS secrets for KIND (no service-ca operator)")
+	script := filepath.Join(repoRoot, "hack", "create-kind-metrics-tls-secrets.sh")
+	output, err := runCommand("bash", script, ReleaseNamespace)
+	logf.Log.Info("metrics TLS secret setup", "output", output)
+	Expect(err).NotTo(HaveOccurred(), "Failed to create metrics TLS secrets: %s", output)
 }
 
 func overrideParamsEnvImage(kustomizeDir, image string) {

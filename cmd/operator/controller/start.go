@@ -144,6 +144,7 @@ var (
 	healthProbeBindAddress                      string
 	pprofBindAddress                            string
 	secureMetrics                               bool
+	metricsCertDir                              string
 	scheduledSparkApplicationTimestampPrecision string
 	development                                 bool
 	zapOptions                                  = logzap.Options{}
@@ -275,6 +276,7 @@ func NewStartCommand() *cobra.Command {
 
 	command.Flags().StringVar(&healthProbeBindAddress, "health-probe-bind-address", ":8081", "The address the probe endpoint binds to.")
 	command.Flags().BoolVar(&secureMetrics, "secure-metrics", false, "If set the metrics endpoint is served securely")
+	command.Flags().StringVar(&metricsCertDir, "metrics-cert-dir", "", "Directory containing tls.crt and tls.key for the metrics server. If empty and --secure-metrics is set, a self-signed certificate is generated.")
 
 	command.Flags().StringVar(&pprofBindAddress, "pprof-bind-address", "0", "The address the pprof endpoint binds to. "+
 		"If not set, it will be 0 in order to disable the pprof server")
@@ -346,11 +348,7 @@ func start() {
 				},
 			},
 		},
-		Metrics: metricsserver.Options{
-			BindAddress:   metricsBindAddress,
-			SecureServing: secureMetrics,
-			TLSOpts:       tlsOptions,
-		},
+		Metrics: newMetricsOptions(metricsBindAddress, secureMetrics, metricsCertDir, tlsOptions),
 		WebhookServer: ctrlwebhook.NewServer(ctrlwebhook.Options{
 			TLSOpts: tlsOptions,
 		}),
@@ -639,4 +637,15 @@ func newSparkSubmitter(ctx context.Context, tlsOpts []func(*tls.Config)) (sparka
 
 	logger.Info("Using REST submitter service", "url", submitterServiceURL)
 	return submitter, nil
+}
+
+// newMetricsOptions builds the metrics server configuration from the provided
+// flags. Extracted as a helper so it can be unit-tested independently.
+func newMetricsOptions(bindAddress string, secure bool, certDir string, tlsOpts []func(*tls.Config)) metricsserver.Options {
+	return metricsserver.Options{
+		BindAddress:   bindAddress,
+		SecureServing: secure,
+		CertDir:       certDir,
+		TLSOpts:       tlsOpts,
+	}
 }

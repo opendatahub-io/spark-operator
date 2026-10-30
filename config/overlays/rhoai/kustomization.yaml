@@ -19,6 +19,8 @@ resources:
   - networkpolicy-metrics.yaml
   - networkpolicy-egress.yaml
   - networkpolicy-webhook.yaml
+  - metrics-service.yaml
+  - service-ca-bundle-configmap.yaml
 
 # 3. Delete the Namespace resource (RHOAI operator manages it)
 #    Add monitoring label to PodMonitor
@@ -88,6 +90,21 @@ patches:
       version: v1
       kind: Deployment
       name: spark-operator-controller
+  # Enable HTTPS metrics for TLS-Scanner compliance (RHOAIENG-95821)
+  - path: secure-metrics-controller-patch.yaml
+    target:
+      kind: Deployment
+      name: spark-operator-controller
+  - path: secure-metrics-webhook-patch.yaml
+    target:
+      kind: Deployment
+      name: spark-operator-webhook
+  - path: secure-metrics-podmonitor-patch.yaml
+    target:
+      group: monitoring.coreos.com
+      version: v1
+      kind: PodMonitor
+      name: spark-operator-podmonitor
 
 # 4. Add RHOAI-specific labels (metadata only, not selectors)
 labels:

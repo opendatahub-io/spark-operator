@@ -1,0 +1,12 @@
+# Switch PodMonitor from HTTP to HTTPS scraping for secure metrics.
+# Uses the OpenShift service CA bundle to verify the metrics TLS certificate.
+- op: replace
+  path: /spec/podMetricsEndpoints/0/scheme
+  value: "https"
+- op: add
+  path: /spec/podMetricsEndpoints/0/tlsConfig
+  value:
+    ca:
+      configMap:
+        name: spark-operator-metrics-ca-bundle
+        key: service-ca.crt

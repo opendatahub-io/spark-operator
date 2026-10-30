@@ -123,6 +123,9 @@ jobs:
             RELATED_IMAGE_ODH_SPARK_OPERATOR_IMAGE=quay.io/opendatahub/spark-operator:local
           kubectl rollout status deployment/spark-operator-module-controller-manager -n opendatahub --timeout=120s
 
+      - name: Create metrics TLS secrets for KIND
+        run: bash hack/create-kind-metrics-tls-secrets.sh opendatahub
+
       - name: Create SparkOperator CR
         run: |
           cat <<'EOF' | kubectl apply -f -
