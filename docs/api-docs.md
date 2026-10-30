@@ -127,6 +127,20 @@ spark-submit.</p>
 </tr>
 <tr>
 <td>
+<code>deps</code><br/>
+<em>
+<a href="#sparkoperator.k8s.io/v1alpha1.Dependencies">
+Dependencies
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>Deps captures all possible types of dependencies of a Spark Connect server.</p>
+</td>
+</tr>
+<tr>
+<td>
 <code>server</code><br/>
 <em>
 <a href="#sparkoperator.k8s.io/v1alpha1.ServerSpec">
@@ -179,6 +193,77 @@ SparkConnectStatus
 </em>
 </td>
 <td>
+</td>
+</tr>
+</tbody>
+</table>
+<h3 id="sparkoperator.k8s.io/v1alpha1.Dependencies">Dependencies
+</h3>
+<p>
+(<em>Appears on:</em><a href="#sparkoperator.k8s.io/v1alpha1.SparkConnectSpec">SparkConnectSpec</a>)
+</p>
+<div>
+<p>Dependencies specifies the Maven dependencies of a Spark Connect server.</p>
+</div>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<code>jars</code><br/>
+<em>
+[]string
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>Jars is a list of JAR files the Spark Connect server depends on.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>packages</code><br/>
+<em>
+[]string
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>Packages is a list of maven coordinates of jars to include on the driver and executor
+classpaths. This will search the local maven repo, then maven central and any additional
+remote repositories given by the &ldquo;repositories&rdquo; option.
+Each package should be of the form &ldquo;groupId:artifactId:version&rdquo;.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>excludePackages</code><br/>
+<em>
+[]string
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>ExcludePackages is a list of &ldquo;groupId:artifactId&rdquo;, to exclude while resolving the
+dependencies provided in Packages to avoid dependency conflicts.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>repositories</code><br/>
+<em>
+[]string
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>Repositories is a list of additional remote repositories to search for the maven coordinate
+given with the &ldquo;packages&rdquo; option.</p>
 </td>
 </tr>
 </tbody>
@@ -389,6 +474,56 @@ int32
 <td></td>
 </tr></tbody>
 </table>
+<h3 id="sparkoperator.k8s.io/v1alpha1.GPUSpec">GPUSpec
+</h3>
+<p>
+(<em>Appears on:</em><a href="#sparkoperator.k8s.io/v1alpha1.SparkPodSpec">SparkPodSpec</a>)
+</p>
+<div>
+<p>GPUSpec defines the GPU resources requested for a Spark Connect server or executor pod.</p>
+<p>Name must be a Kubernetes extended resource name of the form
+&ldquo;<vendor-domain>/gpu&rdquo;, for example &ldquo;nvidia.com/gpu&rdquo; or &ldquo;amd.com/gpu&rdquo;.
+The vendor domain is passed to Spark as
+spark.{driver,executor}.resource.gpu.vendor, and the quantity as
+spark.{driver,executor}.resource.gpu.amount. GPU resource names whose
+suffix is not &ldquo;gpu&rdquo; (for example MIG profiles) are not supported by this
+field; configure them through the pod template and sparkConf instead.</p>
+<p>Setting a GPU does not configure GPU discovery. A discovery script or
+discovery plugin must be provided through sparkConf for Spark to start.</p>
+</div>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<code>name</code><br/>
+<em>
+string
+</em>
+</td>
+<td>
+<p>Name is the Kubernetes GPU resource name, such as nvidia.com/gpu or amd.com/gpu.
+The vendor domain is used for Spark&rsquo;s GPU resource vendor configuration.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>quantity</code><br/>
+<em>
+int64
+</em>
+</td>
+<td>
+<p>Quantity is the number of GPUs to request for each pod.</p>
+</td>
+</tr>
+</tbody>
+</table>
 <h3 id="sparkoperator.k8s.io/v1alpha1.ServerSpec">ServerSpec
 </h3>
 <p>
@@ -589,6 +724,20 @@ spark-submit.</p>
 </tr>
 <tr>
 <td>
+<code>deps</code><br/>
+<em>
+<a href="#sparkoperator.k8s.io/v1alpha1.Dependencies">
+Dependencies
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>Deps captures all possible types of dependencies of a Spark Connect server.</p>
+</td>
+</tr>
+<tr>
+<td>
 <code>server</code><br/>
 <em>
 <a href="#sparkoperator.k8s.io/v1alpha1.ServerSpec">
@@ -777,7 +926,31 @@ int32
 </td>
 <td>
 <em>(Optional)</em>
-<p>Cores maps to <code>spark.driver.cores</code> or <code>spark.executor.cores</code> for the driver and executors, respectively.</p>
+<p>Cores is a shorthand for coreRequest on the server, and maps to <code>spark.executor.cores</code> for executors.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>coreRequest</code><br/>
+<em>
+k8s.io/apimachinery/pkg/api/resource.Quantity
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>CoreRequest is the physical CPU core request for the pod.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>coreLimit</code><br/>
+<em>
+k8s.io/apimachinery/pkg/api/resource.Quantity
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>CoreLimit is the physical CPU core limit for the pod.</p>
 </td>
 </tr>
 <tr>
@@ -790,6 +963,21 @@ string
 <td>
 <em>(Optional)</em>
 <p>Memory is the amount of memory to request for the pod.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>gpu</code><br/>
+<em>
+<a href="#sparkoperator.k8s.io/v1alpha1.GPUSpec">
+GPUSpec
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>GPU specifies GPU resources for the pod and Spark resource scheduler.
+GPU discovery and per-task resource settings are configured through SparkConf.</p>
 </td>
 </tr>
 <tr>
@@ -1043,6 +1231,21 @@ SparkApplicationSpec
 <br/>
 <br/>
 <table>
+<tr>
+<td>
+<code>managedBy</code><br/>
+<em>
+string
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>ManagedBy indicates the controller managing this SparkApplication.
+Set to &ldquo;sparkoperator.k8s.io/spark-operator&rdquo; for the built-in operator
+(default behavior when field is omitted) or &ldquo;kueue.x-k8s.io/multikueue&rdquo;
+to delegate reconciliation to MultiKueue. The field is immutable once set.</p>
+</td>
+</tr>
 <tr>
 <td>
 <code>suspend</code><br/>
@@ -3175,6 +3378,21 @@ It carries every pieces of information a spark-submit command takes and recogniz
 </tr>
 </thead>
 <tbody>
+<tr>
+<td>
+<code>managedBy</code><br/>
+<em>
+string
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>ManagedBy indicates the controller managing this SparkApplication.
+Set to &ldquo;sparkoperator.k8s.io/spark-operator&rdquo; for the built-in operator
+(default behavior when field is omitted) or &ldquo;kueue.x-k8s.io/multikueue&rdquo;
+to delegate reconciliation to MultiKueue. The field is immutable once set.</p>
+</td>
+</tr>
 <tr>
 <td>
 <code>suspend</code><br/>
