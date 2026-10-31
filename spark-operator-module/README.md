@@ -114,7 +114,32 @@ metadata:
   name: default-sparkoperator    # enforced by CEL validation
 spec:
   managementState: Managed       # Managed | Removed
+  spark:
+    jobNamespaces:
+      - default
+    controllerResources:
+      requests:
+        cpu: "1"
+        memory: 4Gi
+      limits:
+        cpu: "4"
+        memory: 16Gi
+    controllerConfiguration:
+      workers: 20
+      workqueueRateLimiter:
+        bucketQPS: 50
+        bucketSize: 500
+        maxDelay:
+          enabled: true
+          duration: 6h
+      kubeAPIQPS: 20
+      kubeAPIBurst: 30
 ```
+
+Every `controllerConfiguration` field is optional. When a field is omitted,
+the module preserves the value from the rendered workload-operator manifest.
+Configured values are applied during every reconciliation, so controller
+restarts and module reconciliations do not reset the tuning.
 
 
 

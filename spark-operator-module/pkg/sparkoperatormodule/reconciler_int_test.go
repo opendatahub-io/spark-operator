@@ -266,6 +266,62 @@ var _ = Describe("SparkOperatorModule Reconciler", func() {
 		Expect(found).To(BeTrue())
 	})
 
+	It("applies spark.controllerConfiguration to the controller Deployment", func(ctx SpecContext) {
+		workers, workqueueQPS, workqueueBurst := int32(20), int32(100), int32(500)
+		kubeQPS, kubeBurst := int32(50), int32(100)
+		maxDelay := "6h"
+		maxDelayEnabled := true
+		cr := fixture.SparkOperatorCR(fixture.WithControllerConfiguration(platformv1alpha1.ControllerConfiguration{
+			Workers: &workers,
+			WorkqueueRateLimiter: &platformv1alpha1.WorkqueueRateLimiterConfiguration{
+				BucketQPS:  &workqueueQPS,
+				BucketSize: &workqueueBurst,
+				MaxDelay: &platformv1alpha1.WorkqueueMaxDelayConfiguration{
+					Enabled:  &maxDelayEnabled,
+					Duration: &maxDelay,
+				},
+			},
+			KubeAPIQPS:   &kubeQPS,
+			KubeAPIBurst: &kubeBurst,
+		}))
+		Expect(testEnv.Client.Create(ctx, cr)).To(Succeed())
+		DeferCleanup(func(ctx SpecContext) {
+			Expect(client.IgnoreNotFound(testEnv.Client.Delete(ctx, cr))).To(Succeed())
+		})
+
+		Eventually(func(g Gomega) {
+			g.Expect(testEnv.Client.Get(ctx, client.ObjectKeyFromObject(cr), cr)).To(Succeed())
+			cond := fixture.FindCondition(cr, string(common.ConditionTypeProvisioningSucceeded))
+			g.Expect(cond).NotTo(BeNil())
+			g.Expect(cond.Status).To(Equal(metav1.ConditionTrue))
+		}).WithContext(ctx).Should(Succeed())
+
+		lastCall := testEnv.Deployer.LastCall()
+		Expect(lastCall).NotTo(BeNil())
+
+		found := false
+		for _, res := range lastCall.Resources {
+			if res.GetKind() != "Deployment" || res.GetName() != "spark-operator-controller" {
+				continue
+			}
+			found = true
+			containers, ok, err := unstructured.NestedSlice(res.Object, "spec", "template", "spec", "containers")
+			Expect(err).NotTo(HaveOccurred())
+			Expect(ok).To(BeTrue())
+			Expect(containers).NotTo(BeEmpty())
+			rawArgs := containers[0].(map[string]any)["args"].([]any)
+			Expect(rawArgs).To(ContainElements(
+				"--controller-threads=20",
+				"--workqueue-ratelimiter-bucket-qps=100",
+				"--workqueue-ratelimiter-bucket-size=500",
+				"--workqueue-ratelimiter-max-delay=6h",
+				"--kube-api-qps=50",
+				"--kube-api-burst=100",
+			))
+		}
+		Expect(found).To(BeTrue())
+	})
+
 	Context("readiness transitions and status completeness", Ordered, func() {
 		var cr *platformv1alpha1.SparkOperator
 

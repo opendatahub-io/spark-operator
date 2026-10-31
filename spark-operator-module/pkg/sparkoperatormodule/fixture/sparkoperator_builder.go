@@ -41,6 +41,15 @@ func WithControllerResources(rr corev1.ResourceRequirements) SparkOperatorOption
 	}
 }
 
+func WithControllerConfiguration(configuration platformv1alpha1.ControllerConfiguration) SparkOperatorOption {
+	return func(cr *platformv1alpha1.SparkOperator) {
+		if cr.Spec.Spark == nil {
+			cr.Spec.Spark = &platformv1alpha1.SparkSpec{}
+		}
+		cr.Spec.Spark.ControllerConfiguration = configuration.DeepCopy()
+	}
+}
+
 func SparkOperatorCR(opts ...SparkOperatorOption) *platformv1alpha1.SparkOperator {
 	cr := &platformv1alpha1.SparkOperator{
 		ObjectMeta: metav1.ObjectMeta{

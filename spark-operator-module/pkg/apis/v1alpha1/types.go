@@ -62,6 +62,71 @@ type SparkSpec struct {
 	// This is the platform-CR equivalent of Helm's controller.resources.
 	// +optional
 	ControllerResources *corev1.ResourceRequirements `json:"controllerResources,omitempty"`
+
+	// ControllerConfiguration overrides selected runtime settings on the
+	// spark-operator-controller Deployment. Unset fields keep the rendered
+	// manifest defaults.
+	// +optional
+	ControllerConfiguration *ControllerConfiguration `json:"controllerConfiguration,omitempty"`
+}
+
+// ControllerConfiguration configures controller concurrency, workqueue rate
+// limiting, and Kubernetes API client throttling.
+type ControllerConfiguration struct {
+	// Workers is the number of concurrent controller reconciliation workers.
+	// +optional
+	// +kubebuilder:validation:Minimum=1
+	Workers *int32 `json:"workers,omitempty"`
+
+	// WorkqueueRateLimiter configures the controller workqueue rate limiter.
+	// +optional
+	WorkqueueRateLimiter *WorkqueueRateLimiterConfiguration `json:"workqueueRateLimiter,omitempty"`
+
+	// KubeAPIQPS is the maximum sustained request rate used by the controller's
+	// Kubernetes API client.
+	// +optional
+	// +kubebuilder:validation:Minimum=1
+	KubeAPIQPS *int32 `json:"kubeAPIQPS,omitempty"`
+
+	// KubeAPIBurst is the maximum burst used by the controller's Kubernetes API
+	// client.
+	// +optional
+	// +kubebuilder:validation:Minimum=1
+	KubeAPIBurst *int32 `json:"kubeAPIBurst,omitempty"`
+}
+
+// WorkqueueRateLimiterConfiguration configures the token-bucket limiter and
+// the maximum per-item retry delay for the controller workqueue.
+type WorkqueueRateLimiterConfiguration struct {
+	// BucketQPS is the average rate at which workqueue items are processed.
+	// +optional
+	// +kubebuilder:validation:Minimum=1
+	BucketQPS *int32 `json:"bucketQPS,omitempty"`
+
+	// BucketSize is the maximum token-bucket burst size.
+	// +optional
+	// +kubebuilder:validation:Minimum=1
+	BucketSize *int32 `json:"bucketSize,omitempty"`
+
+	// MaxDelay controls the maximum per-item retry delay.
+	// +optional
+	MaxDelay *WorkqueueMaxDelayConfiguration `json:"maxDelay,omitempty"`
+}
+
+// WorkqueueMaxDelayConfiguration controls the maximum per-item retry delay.
+// +kubebuilder:validation:XValidation:rule="!has(self.enabled) || !self.enabled || has(self.duration)",message="duration is required when maxDelay is enabled"
+type WorkqueueMaxDelayConfiguration struct {
+	// Enabled controls whether the controller sets a finite maximum retry
+	// delay. False removes the rendered max-delay argument.
+	// +optional
+	Enabled *bool `json:"enabled,omitempty"`
+
+	// Duration is the maximum retry delay, expressed as a Go duration such as
+	// "6h" or "30m".
+	// +optional
+	// +kubebuilder:validation:MinLength=1
+	// +kubebuilder:validation:Pattern=^([0-9]+([.][0-9]+)?)(ns|us|µs|μs|ms|s|m|h)([0-9]+([.][0-9]+)?(ns|us|µs|μs|ms|s|m|h))*$
+	Duration *string `json:"duration,omitempty"`
 }
 
 // SparkOperatorStatus defines the observed state of SparkOperator.
@@ -116,6 +181,27 @@ func ResolveControllerResources(sparkOperator *SparkOperator) *corev1.ResourceRe
 		return nil
 	}
 	return rr
+}
+
+// ResolveControllerConfiguration returns Spec.Spark.ControllerConfiguration
+// when at least one setting is configured. Nil means keep rendered defaults.
+func ResolveControllerConfiguration(sparkOperator *SparkOperator) *ControllerConfiguration {
+	if sparkOperator == nil || sparkOperator.Spec.Spark == nil {
+		return nil
+	}
+	configuration := sparkOperator.Spec.Spark.ControllerConfiguration
+	if configuration == nil {
+		return nil
+	}
+	workqueueConfigured := configuration.WorkqueueRateLimiter != nil &&
+		(configuration.WorkqueueRateLimiter.BucketQPS != nil ||
+			configuration.WorkqueueRateLimiter.BucketSize != nil ||
+			configuration.WorkqueueRateLimiter.MaxDelay != nil)
+	if configuration.Workers == nil && configuration.KubeAPIQPS == nil &&
+		configuration.KubeAPIBurst == nil && !workqueueConfigured {
+		return nil
+	}
+	return configuration
 }
 
 // +kubebuilder:object:root=true

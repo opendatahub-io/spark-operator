@@ -52,12 +52,18 @@ func (r *SparkOperatorModuleReconciler) reconcileComponent(ctx context.Context,
 		return nil, fmt.Errorf("applying controller resources: %w", err)
 	}
 
+	controllerConfiguration := platformv1alpha1.ResolveControllerConfiguration(cr)
+	if err := applyControllerConfiguration(resources, controllerConfiguration); err != nil {
+		return nil, fmt.Errorf("applying controller configuration: %w", err)
+	}
+
 	applyManagedByLabel(resources, SparkOperatorComponentName)
 	log.Info("rendered kustomize manifests",
 		"component", comp.name,
 		"resourceCount", len(resources),
 		"jobNamespaces", jobNamespaces,
 		"controllerResourcesSet", controllerResources != nil,
+		"controllerConfigurationSet", controllerConfiguration != nil,
 	)
 
 	return resources, nil
