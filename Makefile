@@ -118,13 +118,22 @@ print-%: ; @echo $*=$($*)
 
 CONTROLLER_GEN_PATHS := ./api/...;./cmd/...;./internal/...
 
+# Year-less boilerplate header prepended to generated manifests (controller-gen
+# emits none). The boilerplate CI check uses the templates from kubeflow/testing.
+BOILERPLATE_HEADER := hack/boilerplate/boilerplate.sh.txt
+
 .PHONY: manifests
 manifests: controller-gen ## Generate CustomResourceDefinition, RBAC and WebhookConfiguration manifests.
 	$(CONTROLLER_GEN) crd:generateEmbeddedObjectMeta=true rbac:roleName=spark-operator-controller webhook paths="$(CONTROLLER_GEN_PATHS)" output:crd:artifacts:config=config/crd/bases
+	@# controller-gen rewrites these files in full on every run, so prepending
+	@# the header here once is idempotent.
+	@for f in config/crd/bases/*.yaml config/rbac/role.yaml config/webhook/manifests.yaml; do \
+		{ cat $(BOILERPLATE_HEADER); echo; cat "$$f"; } > "$$f.tmp" && mv "$$f.tmp" "$$f"; \
+	done
 
 .PHONY: generate
 generate: controller-gen manifests ## Generate Go code and Python APIs.
-	$(CONTROLLER_GEN) object:headerFile="hack/boilerplate.go.txt" paths="$(CONTROLLER_GEN_PATHS)"
+	$(CONTROLLER_GEN) object:headerFile="hack/boilerplate/boilerplate.go.txt" paths="$(CONTROLLER_GEN_PATHS)"
 	$(MAKE) python-api
 
 .PHONY: update-crd
@@ -218,14 +227,12 @@ e2e-test: envtest kind-load-image kind-load-spark-image ## Run the e2e tests aga
 ##@ Kustomize
 
 .PHONY: kustomize-set-image
-kustomize-set-image: ## Update config/default/kustomization.yaml image tag from VERSION file.
-  @TAG=$$(cat VERSION) && \
-  IMAGE="quay.io/opendatahub/spark-operator:v$$TAG" && \
-  sed -i.bak "s|SPARK_OPERATOR_CONTROLLER_IMAGE=.*|SPARK_OPERATOR_CONTROLLER_IMAGE=$$IMAGE|" config/default/params.env && \
-  sed -i.bak "s|SPARK_OPERATOR_WEBHOOK_IMAGE=.*|SPARK_OPERATOR_WEBHOOK_IMAGE=$$IMAGE|" config/default/params.env && \
-  rm -f config/default/params.env.bak && \
-  echo "Updated params.env image to $$IMAGE"
-
+kustomize-set-image: ## Update the Kustomize image tag and public ConfigMap version from VERSION file.
+	@TAG=$$(cat VERSION) && \
+	sed -i.bak "s|    newTag: .*|    newTag: $$TAG|" config/default/kustomization.yaml && \
+	sed -i.bak "s|      - kubeflow_spark_version=.*|      - kubeflow_spark_version=$$TAG|" config/public/kustomization.yaml && \
+	rm -f config/default/kustomization.yaml.bak config/public/kustomization.yaml.bak && \
+	echo "Updated kustomize image tag and kubeflow_spark_version to $$TAG"
 
 .PHONY: kustomize-lint
 kustomize-lint: ## Validate Kustomize build output (no cluster needed).
@@ -363,17 +370,11 @@ SPARK_IMAGE_ARCHIVE ?= $(LOCALBIN)/spark-image.tar
 
 .PHONY: kind-load-spark-image
 kind-load-spark-image: kind-create-cluster ## Pull the Spark runtime image and load it into the kind cluster.
-	docker image inspect $(SPARK_IMAGE) >/dev/null 2>&1 || docker pull --platform $(SPARK_IMAGE_PLATFORM) $(SPARK_IMAGE)
-	@# `kind load docker-image` pipes `docker save` into `ctr images import
-	@# --all-platforms`. SPARK_IMAGE is pinned to a multi-platform digest, and
-	@# with Docker's containerd image store `docker save` exports the whole OCI
-	@# index - including the manifests for platforms that were never pulled - so
-	@# ctr fails with "content digest <other arch>: not found". Export a
-	@# single-platform archive and load that instead.
-	@mkdir -p $(LOCALBIN)
-	docker save --platform $(SPARK_IMAGE_PLATFORM) -o $(SPARK_IMAGE_ARCHIVE) $(SPARK_IMAGE)
-	$(KIND) load image-archive --name $(KIND_CLUSTER_NAME) $(SPARK_IMAGE_ARCHIVE)
-	rm -f $(SPARK_IMAGE_ARCHIVE)
+	docker image inspect $(SPARK_IMAGE) >/dev/null 2>&1 || docker pull $(SPARK_IMAGE)
+	# Docker 29 keeps only the host platform of multi-platform images, which `kind load docker-image` can't import.
+	docker save --platform $$(docker version -f '{{.Server.Os}}/{{.Server.Arch}}') -o $(LOCALBIN)/spark-image.tar $(SPARK_IMAGE)
+	$(KIND) load image-archive --name $(KIND_CLUSTER_NAME) $(LOCALBIN)/spark-image.tar
+	rm -f $(LOCALBIN)/spark-image.tar
 
 .PHONY: kind-delete-cluster
 kind-delete-cluster: kind ## Delete the created kind cluster.

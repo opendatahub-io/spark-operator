@@ -1,11 +1,11 @@
 /*
-Copyright 2025 The Kubeflow authors.
+Copyright 2025 The Kubeflow Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
 You may obtain a copy of the License at
 
-    https://www.apache.org/licenses/LICENSE-2.0
+    http://www.apache.org/licenses/LICENSE-2.0
 
 Unless required by applicable law or agreed to in writing, software
 distributed under the License is distributed on an "AS IS" BASIS,
@@ -20,6 +20,8 @@ import (
 	"fmt"
 	"strings"
 
+	"k8s.io/apimachinery/pkg/util/validation"
+
 	"github.com/kubeflow/spark-operator/v2/api/v1alpha1"
 	"github.com/kubeflow/spark-operator/v2/pkg/common"
 	"github.com/kubeflow/spark-operator/v2/pkg/util"
@@ -33,15 +35,19 @@ func buildStartConnectServerArgs(conn *v1alpha1.SparkConnect) ([]string, error) 
 		masterOption,
 		namespaceOption,
 		imageOption,
+		dependenciesOption,
 		sparkConfOption,
 		hadoopConfOption,
 		driverConfOption,
 		executorConfOption,
+		gpuConfOption,
 		executorPodTemplateOption,
 		dynamicAllocationOption,
 	}
 
-	args := []string{"${SPARK_HOME}/sbin/start-connect-server.sh"}
+	// The server script path is part of the container entrypoint, so the
+	// arguments built here contain only the options passed to that script.
+	var args []string
 
 	for _, optionFunc := range optionFuncs {
 		option, err := optionFunc(conn)
@@ -110,6 +116,37 @@ func imageOption(conn *v1alpha1.SparkConnect) ([]string, error) {
 	return args, nil
 }
 
+func dependenciesOption(conn *v1alpha1.SparkConnect) ([]string, error) {
+	var args []string
+	deps := conn.Spec.Deps
+
+	// Options are passed as individual container arguments via "$@", so values
+	// are not shell-interpreted and do not need quoting.
+	if len(deps.Jars) > 0 {
+		args = append(args, "--jars", strings.Join(deps.Jars, ","))
+	}
+
+	if len(deps.Packages) > 0 {
+		args = append(args, "--packages", strings.Join(deps.Packages, ","))
+	}
+
+	if len(deps.ExcludePackages) > 0 {
+		args = append(args, "--exclude-packages", strings.Join(deps.ExcludePackages, ","))
+	}
+
+	if len(deps.Repositories) > 0 {
+		args = append(args, "--repositories", strings.Join(deps.Repositories, ","))
+	}
+
+	// The Apache Spark image runs as a non-root user whose passwd HOME may not
+	// exist; Ivy must write under a writable directory to resolve Maven coords.
+	if len(deps.Packages) > 0 || len(deps.ExcludePackages) > 0 || len(deps.Repositories) > 0 {
+		args = append(args, "--conf", "spark.jars.ivy=/tmp/.ivy2")
+	}
+
+	return args, nil
+}
+
 func sparkConfOption(conn *v1alpha1.SparkConnect) ([]string, error) {
 	if conn.Spec.SparkConf == nil {
 		return nil, nil
@@ -142,7 +179,7 @@ func hadoopConfOption(conn *v1alpha1.SparkConnect) ([]string, error) {
 		} else {
 			// Add prefix to the configuration key if it does not start with `spark.hadoop.`.
 			// Users will be able to use the configuration key with or without prefix.
-			args = append(args, "--conf", shellQuoteSparkConfig(common.SparkHadoopPropertiesPrefix+key, value))
+			args = append(args, "--conf", fmt.Sprintf("%s=%s", common.SparkHadoopPropertiesPrefix+key, value))
 		}
 	}
 	return args, nil
@@ -164,12 +201,6 @@ func driverConfOption(conn *v1alpha1.SparkConnect) ([]string, error) {
 		args = append(args, "--conf", fmt.Sprintf("%s=%s", property, value))
 	}
 
-	// Driver cores
-	if conn.Spec.Server.Cores != nil {
-		args = append(args, "--conf",
-			fmt.Sprintf("%s=%d", common.SparkDriverCores, *conn.Spec.Server.Cores))
-	}
-
 	// Driver memory
 	if conn.Spec.Server.Memory != nil {
 		args = append(args, "--conf",
@@ -178,8 +209,8 @@ func driverConfOption(conn *v1alpha1.SparkConnect) ([]string, error) {
 
 	args = append(args, "--conf", "spark.driver.bindAddress=0.0.0.0")
 
-	driverHost := "$(host=${POD_IP}; if [[ $host == *:* ]] && [[ $host != \\[* ]]; then echo \"[$host]\"; else echo \"$host\"; fi)"
-	args = append(args, "--conf", fmt.Sprintf("spark.driver.host=%s", driverHost))
+	// Property "spark.driver.host" is appended by the container entrypoint, which
+	// resolves POD_IP at runtime and wraps IPv6 addresses in brackets.
 	args = append(args, "--conf", "spark.driver.port=7078")
 	args = append(args, "--conf", "spark.driver.blockManager.port=7079")
 
@@ -226,9 +257,49 @@ func executorConfOption(conn *v1alpha1.SparkConnect) ([]string, error) {
 			fmt.Sprintf("%s=%s", common.SparkExecutorMemory, *conn.Spec.Executor.Memory))
 	}
 
+	// Executor CPU request
+	if conn.Spec.Executor.CoreRequest != nil {
+		args = append(args, "--conf",
+			fmt.Sprintf("%s=%s", common.SparkKubernetesExecutorRequestCores, conn.Spec.Executor.CoreRequest.String()))
+	}
+
+	// Executor CPU limit
+	if conn.Spec.Executor.CoreLimit != nil {
+		args = append(args, "--conf",
+			fmt.Sprintf("%s=%s", common.SparkKubernetesExecutorLimitCores, conn.Spec.Executor.CoreLimit.String()))
+	}
+
 	// Use SparkConnect object name as executor pod name prefix.
 	args = append(args, "--conf", fmt.Sprintf("%s=%s", common.SparkKubernetesExecutorPodNamePrefix, conn.Name))
 
+	return args, nil
+}
+
+// gpuConfOption configures Spark's resource scheduler in addition to pod resources.
+func gpuConfOption(conn *v1alpha1.SparkConnect) ([]string, error) {
+	var args []string
+	for _, role := range []struct {
+		name string
+		gpu  *v1alpha1.GPUSpec
+	}{
+		{name: "driver", gpu: conn.Spec.Server.GPU},
+		{name: "executor", gpu: conn.Spec.Executor.GPU},
+	} {
+		if role.gpu == nil {
+			continue
+		}
+		vendor, name, ok := strings.Cut(role.gpu.Name, "/")
+		if !ok || name != "gpu" || len(validation.IsDNS1123Subdomain(vendor)) != 0 {
+			return nil, fmt.Errorf("%s GPU resource name must have the form <vendor-domain>/gpu, got %q", role.name, role.gpu.Name)
+		}
+		if role.gpu.Quantity <= 0 {
+			return nil, fmt.Errorf("%s GPU quantity must be positive, got %d", role.name, role.gpu.Quantity)
+		}
+		args = append(args,
+			"--conf", fmt.Sprintf("spark.%s.resource.gpu.amount=%d", role.name, role.gpu.Quantity),
+			"--conf", fmt.Sprintf("spark.%s.resource.gpu.vendor=%s", role.name, vendor),
+		)
+	}
 	return args, nil
 }
 
