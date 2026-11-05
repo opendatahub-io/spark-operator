@@ -1,0 +1,145 @@
+# PromQL for the OpenShift AI Spark Operator P0 benchmark.
+# Names match pkg/common/metrics.go. No metrics prefix (controller default).
+#
+# Operator series are empty when --enable-metrics is false.
+# Start-latency histogram buckets begin at 30s, so p50/p90 below that are coarse.
+# Prefer the harness start_latency_seconds for per-app latency.
+#
+# Query path: Thanos querier in openshift-monitoring (see metrics/snapshot.sh).
+
+queries:
+  # --- Spark Operator application metrics ---
+  - id: submit_total
+    group: spark-operator
+    description: Cumulative SparkApplication submissions.
+    expr: sum(spark_application_submit_count)
+
+  - id: submit_rate_per_min
+    group: spark-operator
+    description: Submission throughput over 30m, apps/min.
+    expr: sum(increase(spark_application_submit_count[30m])) / 30
+
+  - id: running
+    group: spark-operator
+    description: SparkApplications currently in Running.
+    expr: sum(spark_application_running_count)
+
+  - id: success_total
+    group: spark-operator
+    description: Cumulative successful SparkApplications.
+    expr: sum(spark_application_success_count)
+
+  - id: failure_total
+    group: spark-operator
+    description: Cumulative failed SparkApplications.
+    expr: sum(spark_application_failure_count)
+
+  - id: failed_submission_total
+    group: spark-operator
+    description: Cumulative submission failures.
+    expr: sum(spark_application_failed_submission_count)
+
+  - id: start_latency_summary
+    group: spark-operator
+    description: Operator start-latency summary (quantiles 0.5, 0.9, 0.99 when emitted).
+    expr: spark_application_start_latency_seconds
+
+  - id: start_latency_histogram_p50
+    group: spark-operator
+    description: p50 start latency from the histogram. Buckets start at 30s.
+    expr: histogram_quantile(0.50, sum by (le) (rate(spark_application_start_latency_seconds_histogram_bucket[30m])))
+
+  - id: start_latency_histogram_p90
+    group: spark-operator
+    description: p90 start latency from the histogram. Buckets start at 30s.
+    expr: histogram_quantile(0.90, sum by (le) (rate(spark_application_start_latency_seconds_histogram_bucket[30m])))
+
+  - id: start_latency_histogram_p99
+    group: spark-operator
+    description: p99 start latency from the histogram. Buckets start at 30s.
+    expr: histogram_quantile(0.99, sum by (le) (rate(spark_application_start_latency_seconds_histogram_bucket[30m])))
+
+  - id: workqueue_depth
+    group: spark-operator
+    description: Controller workqueue depth for SparkApplication.
+    expr: sum(workqueue_depth{name=~"(?i).*sparkapplication.*"})
+
+  - id: workqueue_work_duration_p99
+    group: spark-operator
+    description: p99 reconcile duration. Unreliable once queue latency exceeds ~16m.
+    expr: histogram_quantile(0.99, sum by (le) (rate(workqueue_work_duration_seconds_bucket{name=~"(?i).*sparkapplication.*"}[5m])))
+
+  - id: executor_running
+    group: spark-operator
+    description: Executors the operator currently counts as running.
+    expr: sum(spark_executor_running_count)
+
+  # --- Controller pod (OpenShift container monitoring, not the operator /metrics) ---
+  - id: controller_cpu_cores
+    group: controller-pod
+    description: Controller CPU usage in cores.
+    expr: sum(rate(container_cpu_usage_seconds_total{namespace="redhat-ods-applications",pod=~"spark-operator-controller-.*",container!="",container!="POD"}[5m]))
+
+  - id: controller_memory_working_set_bytes
+    group: controller-pod
+    description: Controller memory working set.
+    expr: sum(container_memory_working_set_bytes{namespace="redhat-ods-applications",pod=~"spark-operator-controller-.*",container!="",container!="POD"})
+
+  - id: controller_cpu_throttle_ratio
+    group: controller-pod
+    description: Fraction of periods the controller was CFS-throttled.
+    expr: sum(rate(container_cpu_cfs_throttled_seconds_total{namespace="redhat-ods-applications",pod=~"spark-operator-controller-.*",container!="",container!="POD"}[5m]))
+
+  - id: controller_restarts
+    group: controller-pod
+    description: Controller container restarts.
+    expr: sum(kube_pod_container_status_restarts_total{namespace="redhat-ods-applications",pod=~"spark-operator-controller-.*"})
+
+  # --- API server ---
+  - id: apiserver_sparkapplication_latency_p99
+    group: apiserver
+    description: p99 API latency for sparkapplications by verb.
+    expr: histogram_quantile(0.99, sum by (le, verb) (rate(apiserver_request_duration_seconds_bucket{resource="sparkapplications"}[5m])))
+
+  - id: apiserver_sparkapplication_requests
+    group: apiserver
+    description: API request rate for sparkapplications by verb and code.
+    expr: sum by (verb, code) (rate(apiserver_request_total{resource="sparkapplications"}[5m]))
+
+  - id: apiserver_pod_latency_p99
+    group: apiserver
+    description: p99 API latency for pods by verb.
+    expr: histogram_quantile(0.99, sum by (le, verb) (rate(apiserver_request_duration_seconds_bucket{resource="pods"}[5m])))
+
+  # --- Admission webhooks (names come from the live inventory, not a fixed count) ---
+  - id: webhook_admission_duration_p99
+    group: webhook
+    description: p99 admission duration for Spark Operator webhooks.
+    expr: histogram_quantile(0.99, sum by (le, name) (rate(apiserver_admission_webhook_admission_duration_seconds_bucket{name=~".*sparkoperator\\.k8s\\.io"}[5m])))
+
+  - id: webhook_rejections
+    group: webhook
+    description: Admission rejections for Spark Operator webhooks.
+    expr: sum by (name) (rate(apiserver_admission_webhook_rejection_count{name=~".*sparkoperator\\.k8s\\.io"}[5m]))
+
+  # --- etcd ---
+  - id: etcd_commit_duration_p99
+    group: etcd
+    description: p99 etcd backend commit duration.
+    expr: histogram_quantile(0.99, sum by (le) (rate(etcd_disk_backend_commit_duration_seconds_bucket[5m])))
+
+  - id: etcd_db_size_bytes
+    group: etcd
+    description: etcd MVCC database size.
+    expr: etcd_mvcc_db_total_size_in_bytes
+
+  # --- Bench namespaces ---
+  - id: bench_pods_by_phase
+    group: workloads
+    description: Pods in the benchmark namespaces by phase.
+    expr: sum by (namespace, phase) (kube_pod_status_phase{namespace=~"spark-bench-.*"})
+
+  - id: bench_pods_unschedulable
+    group: workloads
+    description: Unschedulable pods in the benchmark namespaces.
+    expr: sum by (namespace) (kube_pod_status_unschedulable{namespace=~"spark-bench-.*"} == 1)
