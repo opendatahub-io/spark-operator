@@ -8,6 +8,7 @@ on:
       - main
       - "rhoai-*"
     paths:
+      - "go.mod"
       - "spark-operator-module/**"
       - "spark-operator-module-controller.Dockerfile"
       - "Makefile.spark-operator-module.mk"
@@ -17,6 +18,7 @@ on:
       - ".github/workflows/spark-operator-module-ci.yaml"
   pull_request:
     paths:
+      - "go.mod"
       - "spark-operator-module/**"
       - "spark-operator-module-controller.Dockerfile"
       - "Makefile.spark-operator-module.mk"
@@ -55,7 +57,7 @@ jobs:
       - name: Setup Go
         uses: actions/setup-go@4b73464bb391d4059bd26b0524d20df3927bd417 # v6
         with:
-          go-version-file: spark-operator-module/go.mod
+          go-version-file: go.mod
 
       - name: Install dependencies
         run: cd spark-operator-module && go mod download

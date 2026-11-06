@@ -1,8 +1,8 @@
 module github.com/kubeflow/spark-operator/v2/test/e2e/rhoai
 
-go 1.25.0
+go 1.26.0
 
-toolchain go1.25.11
+toolchain go1.26.10
 
 replace github.com/kubeflow/spark-operator/v2 => ../../..
 

@@ -23,8 +23,12 @@ import (
 	"sync/atomic"
 	"testing"
 
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"k8s.io/apimachinery/pkg/runtime/schema"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
+	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 )
 
@@ -139,6 +143,46 @@ func TestProfileWatcher_TransientThenSuccess(t *testing.T) {
 	}
 	if called.Load() != 1 {
 		t.Errorf("expected callback to fire on successful profile fetch, got %d calls", called.Load())
+	}
+}
+
+func TestProfileWatcher_TransientRecoveryWithoutExplicitProfile(t *testing.T) {
+	apiServer := makeAPIServerObj("Intermediate")
+	unstructured.RemoveNestedField(apiServer.Object, "spec", "tlsSecurityProfile")
+	c := fake.NewClientBuilder().WithObjects(apiServer).Build()
+
+	var watcher *ProfileWatcher
+	var called atomic.Int32
+	watchCtx, err := setupProfileWatcherRestart(t.Context(), c, intermediateFallback(), func(w *ProfileWatcher) error {
+		watcher = w
+		callback := watcher.onProfileChange
+		watcher.onProfileChange = func() {
+			called.Add(1)
+			callback()
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("unexpected watcher setup error: %v", err)
+	}
+
+	if _, err := watcher.Reconcile(context.Background(), reconcile.Request{}); err != nil {
+		t.Fatalf("unexpected reconcile error: %v", err)
+	}
+	if called.Load() != 1 {
+		t.Fatalf("expected restart after fallback recovery, got %d callbacks", called.Load())
+	}
+	select {
+	case <-watchCtx.Done():
+	default:
+		t.Fatal("watcher context should be cancelled after fallback recovery")
+	}
+
+	if _, err := watcher.Reconcile(context.Background(), reconcile.Request{}); err != nil {
+		t.Fatalf("unexpected second reconcile error: %v", err)
+	}
+	if called.Load() != 1 {
+		t.Errorf("expected only one restart callback, got %d", called.Load())
 	}
 }
 
@@ -289,4 +333,32 @@ func TestSetupProfileWatcherRestart(t *testing.T) {
 			t.Error("derived context should be cancelled when setup fails")
 		}
 	})
+}
+
+// TestProfileWatcher_FetchErrorFailsClosed pins the denied-read contract in
+// the watch loop: a Forbidden read must trigger the restart path (startup
+// then fails closed) rather than retrying or degrading to a guessed posture.
+func TestProfileWatcher_FetchErrorFailsClosed(t *testing.T) {
+	var called atomic.Int32
+	c := fake.NewClientBuilder().
+		WithInterceptorFuncs(interceptor.Funcs{
+			Get: func(_ context.Context, _ client.WithWatch, _ client.ObjectKey, _ client.Object, _ ...client.GetOption) error {
+				gr := schema.GroupResource{Group: "config.openshift.io", Resource: "apiservers"}
+				return apierrors.NewForbidden(gr, "cluster", errors.New("denied"))
+			},
+		}).Build()
+	watcher := NewProfileWatcher(c, nil, func() {
+		called.Add(1)
+	})
+
+	result, err := watcher.Reconcile(context.Background(), reconcile.Request{})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if called.Load() != 1 {
+		t.Error("a fetch error must trigger the restart callback so startup fails closed")
+	}
+	if result.RequeueAfter != 0 {
+		t.Errorf("a fetch error must not requeue-retry, got RequeueAfter=%v", result.RequeueAfter)
+	}
 }
