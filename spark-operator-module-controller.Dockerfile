@@ -1,5 +1,5 @@
 # Build the module operator binary
-FROM registry.access.redhat.com/ubi9/go-toolset:1.25.7@sha256:df073e37d0cfe6c83df9fd4891b14252f3822cb511000c48f32c632f0d24920f AS builder
+FROM registry.access.redhat.com/ubi9/go-toolset:1.26.10@sha256:c2bd0309bf78ae317024fdfc5602a31704e0dba9572f6d4b0bd4b681033dc965 AS builder
 ENV PATH="$PATH:/opt/app-root/src/go/bin"
 
 USER root

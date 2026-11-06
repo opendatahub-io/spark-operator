@@ -38,7 +38,6 @@ import (
 	"k8s.io/apimachinery/pkg/fields"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/util/wait"
-	"k8s.io/client-go/rest"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/cache"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -196,40 +195,49 @@ func start() {
 	cfg.Burst = kubeAPIBurst
 
 	// Create the manager.
-	tlsOptions, profileResult := newTLSOptions(cfg)
-	mgr, err := ctrl.NewManager(cfg, ctrl.Options{
-		Scheme:  operatorscheme.WebhookScheme,
-		Cache:   newCacheOptions(),
-		Client:  client.Options{},
-		Metrics: newMetricsOptions(metricsBindAddress, secureMetrics, metricsCertDir, tlsOptions),
-		WebhookServer: ctrlwebhook.NewServer(ctrlwebhook.Options{
-			Port:     webhookPort,
-			CertDir:  webhookCertDir,
-			CertName: webhookCertName,
-			KeyName:  webhookKeyName,
-			TLSOpts:  tlsOptions,
-		}),
-		HealthProbeBindAddress:  healthProbeBindAddress,
-		LeaderElection:          enableLeaderElection,
-		LeaderElectionID:        leaderElectionLockName,
-		LeaderElectionNamespace: leaderElectionLockNamespace,
-		LeaseDuration:           &leaderElectionLeaseDuration,
-		RenewDeadline:           &leaderElectionRenewDeadline,
-		RetryPeriod:             &leaderElectionRetryPeriod,
-		// LeaderElectionReleaseOnCancel defines if the leader should step down voluntarily
-		// when the Manager ends. This requires the binary to immediately end when the
-		// Manager is stopped, otherwise, this setting is unsafe. Setting this significantly
-		// speeds up voluntary leader transitions as the new leader don't have to wait
-		// LeaseDuration time first.
-		//
-		// In the default scaffold provided, the program ends immediately after
-		// the manager stops, so would be fine to enable this option. However,
-		// if you are doing or is intended to do any operation such as perform cleanups
-		// after the manager stops then its usage might be unsafe.
-		// LeaderElectionReleaseOnCancel: true,
-	})
+	mgr, _, profileResult, err := newManagerWithTLSProfile(
+		func() (operatortls.FetchResult, error) {
+			return operatortls.FetchTLSProfile(cfg, operatorscheme.WebhookScheme)
+		},
+		func(tlsOptions []func(*tls.Config)) (ctrl.Manager, error) {
+			mgr, err := ctrl.NewManager(cfg, ctrl.Options{
+				Scheme:  operatorscheme.WebhookScheme,
+				Cache:   newCacheOptions(),
+				Client:  client.Options{},
+				Metrics: newMetricsOptions(metricsBindAddress, secureMetrics, metricsCertDir, tlsOptions),
+				WebhookServer: ctrlwebhook.NewServer(ctrlwebhook.Options{
+					Port:     webhookPort,
+					CertDir:  webhookCertDir,
+					CertName: webhookCertName,
+					KeyName:  webhookKeyName,
+					TLSOpts:  tlsOptions,
+				}),
+				HealthProbeBindAddress:  healthProbeBindAddress,
+				LeaderElection:          enableLeaderElection,
+				LeaderElectionID:        leaderElectionLockName,
+				LeaderElectionNamespace: leaderElectionLockNamespace,
+				LeaseDuration:           &leaderElectionLeaseDuration,
+				RenewDeadline:           &leaderElectionRenewDeadline,
+				RetryPeriod:             &leaderElectionRetryPeriod,
+				// LeaderElectionReleaseOnCancel defines if the leader should step down voluntarily
+				// when the Manager ends. This requires the binary to immediately end when the
+				// Manager is stopped, otherwise, this setting is unsafe. Setting this significantly
+				// speeds up voluntary leader transitions as the new leader don't have to wait
+				// LeaseDuration time first.
+				//
+				// In the default scaffold provided, the program ends immediately after
+				// the manager stops, so would be fine to enable this option. However,
+				// if you are doing or is intended to do any operation such as perform cleanups
+				// after the manager stops then its usage might be unsafe.
+				// LeaderElectionReleaseOnCancel: true,
+			})
+			if err != nil {
+				logger.Error(err, "Failed to create manager")
+			}
+			return mgr, err
+		},
+	)
 	if err != nil {
-		logger.Error(err, "Failed to create manager")
 		os.Exit(1)
 	}
 
@@ -369,14 +377,31 @@ func setupLog() {
 	)
 }
 
-func newTLSOptions(cfg *rest.Config) ([]func(c *tls.Config), operatortls.FetchResult) {
-	profileResult := operatortls.FetchTLSProfile(cfg, operatorscheme.WebhookScheme)
+func newTLSOptions(fetchProfile func() (operatortls.FetchResult, error)) ([]func(c *tls.Config), operatortls.FetchResult, error) {
+	profileResult, err := fetchProfile()
+	if err != nil {
+		return nil, profileResult, err
+	}
 	tlsOpts := profileResult.TLSOpts
 
 	tlsOpts = append(tlsOpts, func(c *tls.Config) {
-		c.NextProtos = []string{"h2", "http/1.1"}
+		c.NextProtos = operatortls.NextProtos(profileResult.MinVersion, profileResult.CipherSuites)
 	})
-	return tlsOpts, profileResult
+	return tlsOpts, profileResult, nil
+}
+
+func newManagerWithTLSProfile(
+	fetchProfile func() (operatortls.FetchResult, error),
+	createManager func([]func(*tls.Config)) (ctrl.Manager, error),
+) (ctrl.Manager, []func(*tls.Config), operatortls.FetchResult, error) {
+	tlsOptions, profileResult, err := newTLSOptions(fetchProfile)
+	if err != nil {
+		logger.Error(err, "failed to resolve cluster TLS profile")
+		return nil, nil, profileResult, err
+	}
+
+	mgr, err := createManager(tlsOptions)
+	return mgr, tlsOptions, profileResult, err
 }
 
 // newCacheOptions creates and returns a cache.Options instance configured with default namespaces and object caching settings.

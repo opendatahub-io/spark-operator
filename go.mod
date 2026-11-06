@@ -1,8 +1,8 @@
 module github.com/kubeflow/spark-operator/v2
 
-go 1.25.0
+go 1.26.0
 
-toolchain go1.25.11
+toolchain go1.26.10
 
 tool k8s.io/code-generator
 
@@ -11,6 +11,8 @@ require (
 	github.com/google/uuid v1.6.0
 	github.com/onsi/ginkgo/v2 v2.27.2
 	github.com/onsi/gomega v1.38.2
+	github.com/openshift/api v0.0.0-20260601143908-70f01b82bb53
+	github.com/openshift/library-go v0.0.0-20260213153706-03f1709971c5
 	github.com/prometheus/client_golang v1.23.2
 	github.com/robfig/cron/v3 v3.0.1
 	github.com/spf13/cobra v1.10.2

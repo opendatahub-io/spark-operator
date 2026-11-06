@@ -18,8 +18,42 @@ package controller
 
 import (
 	"crypto/tls"
+	"errors"
 	"testing"
+
+	operatortls "github.com/kubeflow/spark-operator/v2/pkg/tls"
+	ctrl "sigs.k8s.io/controller-runtime"
 )
+
+func TestManagerWithTLSProfile_FetchFailureDoesNotCreateManager(t *testing.T) {
+	tests := []struct {
+		name string
+		err  error
+	}{
+		{name: "denied", err: errors.New("forbidden")},
+		{name: "malformed", err: errors.New("invalid TLS profile")},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			managerCreated := false
+			_, _, _, err := newManagerWithTLSProfile(
+				func() (operatortls.FetchResult, error) {
+					return operatortls.FetchResult{}, tt.err
+				},
+				func([]func(*tls.Config)) (ctrl.Manager, error) {
+					managerCreated = true
+					return nil, nil
+				},
+			)
+			if !errors.Is(err, tt.err) {
+				t.Fatalf("error = %v, want %v", err, tt.err)
+			}
+			if managerCreated {
+				t.Fatal("manager factory must not run when TLS profile resolution fails")
+			}
+		})
+	}
+}
 
 func TestNewMetricsOptions_Defaults(t *testing.T) {
 	opts := newMetricsOptions(":8080", false, "", nil)
