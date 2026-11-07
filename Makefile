@@ -65,7 +65,7 @@ KIND_K8S_VERSION ?= v1.35.0
 ENVTEST_VERSION ?= release-0.20
 # ENVTEST_K8S_VERSION is the version of Kubernetes to use for setting up ENVTEST binaries (i.e. 1.31)
 ENVTEST_K8S_VERSION ?= $(shell go list -m -f "{{ .Version }}" k8s.io/api | awk -F'[v.]' '{printf "1.%d", $$3}')
-GOLANGCI_LINT_VERSION ?= v2.1.6
+GOLANGCI_LINT_VERSION ?= v2.12.2
 GEN_CRD_API_REFERENCE_DOCS_VERSION ?= v0.3.0
 HELM_VERSION ?= $(shell grep -e '^[[:space:]]*helm.sh/helm/v3 v' test/e2e/go.mod | cut -d ' ' -f 2)
 HELM_UNITTEST_VERSION ?= 0.8.2

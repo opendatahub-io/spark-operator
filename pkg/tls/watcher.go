@@ -38,6 +38,7 @@ var watcherLog = ctrl.Log.WithName("tls-profile-watcher")
 type ProfileWatcher struct {
 	client.Client
 	lastProfile     map[string]interface{}
+	initialFallback bool
 	onProfileChange func()
 }
 
@@ -52,13 +53,24 @@ func NewProfileWatcher(c client.Client, profile map[string]interface{}, onProfil
 const profileRetryInterval = 5 * time.Second
 
 func (w *ProfileWatcher) Reconcile(ctx context.Context, _ reconcile.Request) (reconcile.Result, error) {
-	result := FetchTLSProfileWithClient(ctx, w.Client)
+	result, err := FetchTLSProfileWithClient(ctx, w.Client)
+	if err != nil {
+		// Denied reads and invalid profiles must not degrade into a guessed
+		// posture: trigger the restart path so startup fails closed.
+		watcherLog.Error(err, "TLS profile fetch failed, triggering restart to fail closed")
+		if w.onProfileChange != nil {
+			w.onProfileChange()
+		}
+		return reconcile.Result{}, nil
+	}
 	if !result.Fetched {
 		watcherLog.Info("TLS profile fetch did not succeed, retrying", "retryAfter", profileRetryInterval)
 		return reconcile.Result{RequeueAfter: profileRetryInterval}, nil
 	}
 
-	if !reflect.DeepEqual(w.lastProfile, result.RawSpec) {
+	profileChanged := w.initialFallback || !reflect.DeepEqual(w.lastProfile, result.RawSpec)
+	w.initialFallback = false
+	if profileChanged {
 		watcherLog.Info("TLS security profile changed, triggering restart")
 		w.lastProfile = result.RawSpec
 		if w.onProfileChange != nil {
@@ -124,6 +136,7 @@ func setupProfileWatcherRestart(ctx context.Context, c client.Client, result Fet
 		watcherLog.Info("TLS security profile changed, shutting down for restart")
 		cancel()
 	})
+	watcher.initialFallback = !result.Fetched
 	if err := setup(watcher); err != nil {
 		cancel()
 		return ctx, fmt.Errorf("unable to set up TLS security profile watcher: %w", err)

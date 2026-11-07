@@ -128,7 +128,10 @@ jobs:
         run: make build-operator
 
   build-helm-chart:
-    runs-on: ubuntu-latest
+    # Pinned: azure/setup-helm v5.0.1 and manusa/actions-setup-minikube reject
+    # Ubuntu 26.04 (ubuntu-latest since Nov 2026); unpin only after both are
+    # bumped to releases supporting it.
+    runs-on: ubuntu-24.04
     steps:
       - name: Determine branch name
         id: get_branch
