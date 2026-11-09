@@ -1,11 +1,11 @@
 /*
-Copyright 2025 The Kubeflow authors.
+Copyright 2025 The Kubeflow Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
 You may obtain a copy of the License at
 
-    https://www.apache.org/licenses/LICENSE-2.0
+    http://www.apache.org/licenses/LICENSE-2.0
 
 Unless required by applicable law or agreed to in writing, software
 distributed under the License is distributed on an "AS IS" BASIS,
@@ -191,5 +191,36 @@ func TestScheduledSparkApplicationValidatorValidateCreate_ConfigMapNames(t *test
 	_, err := validator.ValidateCreate(context.Background(), app)
 	if err == nil || !strings.Contains(err.Error(), `spec.template.driver.configMaps[0].name has invalid ConfigMap name "MY_CONFIG"`) {
 		t.Fatalf("expected an invalid ConfigMap name error, got %v", err)
+	}
+}
+
+func TestScheduledSparkApplicationValidatorValidateCreate_ClientModeWarning(t *testing.T) {
+	validator := NewScheduledSparkApplicationValidator()
+
+	app := newScheduledSparkApplication()
+	app.Spec.Template.Mode = v1beta2.DeployModeClient
+
+	warnings, err := validator.ValidateCreate(context.Background(), app)
+	if err != nil {
+		t.Fatalf("expected success, got %v", err)
+	}
+	if len(warnings) != 1 || !strings.Contains(warnings[0], "spec.template.mode: client mode is deprecated") {
+		t.Fatalf("expected client mode deprecation warning, got %v", warnings)
+	}
+}
+
+func TestScheduledSparkApplicationValidatorValidateUpdate_ClientModeWarning(t *testing.T) {
+	validator := NewScheduledSparkApplicationValidator()
+
+	oldApp := newScheduledSparkApplication()
+	newApp := newScheduledSparkApplication()
+	newApp.Spec.Template.Mode = v1beta2.DeployModeClient
+
+	warnings, err := validator.ValidateUpdate(context.Background(), oldApp, newApp)
+	if err != nil {
+		t.Fatalf("expected success, got %v", err)
+	}
+	if len(warnings) != 1 || !strings.Contains(warnings[0], "spec.template.mode: client mode is deprecated") {
+		t.Fatalf("expected client mode deprecation warning, got %v", warnings)
 	}
 }

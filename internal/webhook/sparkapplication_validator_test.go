@@ -1,11 +1,11 @@
 /*
-Copyright 2025 The Kubeflow authors.
+Copyright 2025 The Kubeflow Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
 You may obtain a copy of the License at
 
-    https://www.apache.org/licenses/LICENSE-2.0
+    http://www.apache.org/licenses/LICENSE-2.0
 
 Unless required by applicable law or agreed to in writing, software
 distributed under the License is distributed on an "AS IS" BASIS,
@@ -654,4 +654,47 @@ func configMapRefs(names ...string) []v1beta2.NamePath {
 		refs = append(refs, v1beta2.NamePath{Name: name, Path: fmt.Sprintf("/etc/spark/conf%d", i)})
 	}
 	return refs
+}
+
+func TestSparkApplicationValidatorValidateCreate_ClientModeWarning(t *testing.T) {
+	validator := newTestValidator(t, false)
+
+	app := newSparkApplication()
+	app.Spec.Mode = v1beta2.DeployModeClient
+
+	warnings, err := validator.ValidateCreate(context.Background(), app)
+	if err != nil {
+		t.Fatalf("expected success, got %v", err)
+	}
+	if len(warnings) != 1 || !strings.Contains(warnings[0], "spec.mode: client mode is deprecated") {
+		t.Fatalf("expected client mode deprecation warning, got %v", warnings)
+	}
+}
+
+func TestSparkApplicationValidatorValidateCreate_ClusterModeNoWarning(t *testing.T) {
+	validator := newTestValidator(t, false)
+
+	warnings, err := validator.ValidateCreate(context.Background(), newSparkApplication())
+	if err != nil {
+		t.Fatalf("expected success, got %v", err)
+	}
+	if len(warnings) != 0 {
+		t.Fatalf("expected no warnings, got %v", warnings)
+	}
+}
+
+func TestSparkApplicationValidatorValidateUpdate_ClientModeWarning(t *testing.T) {
+	validator := newTestValidator(t, false)
+
+	oldApp := newSparkApplication()
+	newApp := newSparkApplication()
+	newApp.Spec.Mode = v1beta2.DeployModeClient
+
+	warnings, err := validator.ValidateUpdate(context.Background(), oldApp, newApp)
+	if err != nil {
+		t.Fatalf("expected success, got %v", err)
+	}
+	if len(warnings) != 1 || !strings.Contains(warnings[0], "spec.mode: client mode is deprecated") {
+		t.Fatalf("expected client mode deprecation warning, got %v", warnings)
+	}
 }

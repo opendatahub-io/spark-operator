@@ -1,11 +1,11 @@
 /*
-Copyright 2024 The Kubeflow authors.
+Copyright 2024 The Kubeflow Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
 You may obtain a copy of the License at
 
-    https://www.apache.org/licenses/LICENSE-2.0
+    http://www.apache.org/licenses/LICENSE-2.0
 
 Unless required by applicable law or agreed to in writing, software
 distributed under the License is distributed on an "AS IS" BASIS,
@@ -58,7 +58,7 @@ func (v *ScheduledSparkApplicationValidator) ValidateCreate(ctx context.Context,
 	if err := v.validate(app); err != nil {
 		return nil, err
 	}
-	return nil, nil
+	return deprecationWarnings(&app.Spec.Template, field.NewPath("spec", "template")), nil
 }
 
 // ValidateUpdate implements admission.Validator.
@@ -82,7 +82,7 @@ func (v *ScheduledSparkApplicationValidator) ValidateUpdate(ctx context.Context,
 	if err := v.validate(newApp); err != nil {
 		return nil, err
 	}
-	return nil, nil
+	return deprecationWarnings(&newApp.Spec.Template, field.NewPath("spec", "template")), nil
 }
 
 // ValidateDelete implements admission.Validator.

@@ -2,7 +2,7 @@
 
 As with all other Kubernetes API objects, a `SparkApplication` needs the `apiVersion`, `kind`, and `metadata` fields. For general information about working with manifests, see [object management using kubectl](https://kubernetes.io/docs/concepts/overview/object-management-kubectl/overview/).
 
-A `SparkApplication` also needs a [`.spec` section](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/api-conventions.md#spec-and-status). This section contains fields for specifying various aspects of an application including its type (`Scala`, `Java`, `Python`, or `R`), deployment mode (`cluster` or `client`), main application resource URI (e.g., the URI of the application jar), main class, arguments, etc. Node selectors are also supported via the optional field `.spec.nodeSelector`.
+A `SparkApplication` also needs a [`.spec` section](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/api-conventions.md#spec-and-status). This section contains fields for specifying various aspects of an application including its type (`Scala`, `Java`, `Python`, or `R`), deployment mode (`cluster`; `client` is deprecated), main application resource URI (e.g., the URI of the application jar), main class, arguments, etc. Node selectors are also supported via the optional field `.spec.nodeSelector`.
 
 It also has fields for specifying the unified container image (to use for both the driver and executors) and the image pull policy, namely, `.spec.image` and `.spec.imagePullPolicy` respectively. If a custom init-container (in both the driver and executor pods) image needs to be used, the optional field `.spec.initContainerImage` can be used to specify it. If set, `.spec.initContainerImage` overrides `.spec.image` for the init-container image. Otherwise, the image specified by `.spec.image` will be used for the init-container. It is invalid if both `.spec.image` and `.spec.initContainerImage` are not set.
 
@@ -17,14 +17,18 @@ metadata:
 spec:
   type: Scala
   mode: cluster
-  image: spark:3.5.1
+  image: docker.io/apache/spark:4.2.1
   mainClass: org.apache.spark.examples.SparkPi
-  mainApplicationFile: local:///opt/spark/examples/jars/spark-examples_2.12-3.5.1.jar
+  mainApplicationFile: local:///opt/spark/examples/jars/spark-examples.jar
 ```
 
 ## Specifying Deployment Mode
 
-A `SparkApplication` should set `.spec.mode` to `cluster`, as `client` is not currently implemented. The driver pod will then run `spark-submit` in `client` mode internally to run the driver program. Additional details of how `SparkApplication`s are run can be found in the [design documentation](../overview/index.md#architecture).
+A `SparkApplication` should set `.spec.mode` to `cluster`. The driver pod will then run `spark-submit` in `client` mode internally to run the driver program. Additional details of how `SparkApplication`s are run can be found in the [design documentation](../overview/index.md#architecture).
+
+:::{warning}
+`.spec.mode: client` is deprecated and will be removed in the next API version. Client mode runs the driver inside the operator, which is a security risk. For interactive workloads, use [SparkConnect](spark-connect.md) instead. See [#3253](https://github.com/kubeflow/spark-operator/issues/3253).
+:::
 
 ## Specifying Application Dependencies
 
@@ -575,6 +579,24 @@ spec:
 ```
 
 In cases like Spark Streaming or Spark Structured Streaming applications, you can test if a file exists to start a graceful shutdown and stop all streaming queries manually.
+
+## Using a Runtime Class
+
+A `SparkApplication` can run its driver and executor pods with a specific [RuntimeClass](https://kubernetes.io/docs/concepts/containers/runtime-class/), such as a sandboxed or confidential runtime like gVisor or Kata Containers. This is useful when Spark jobs need stronger isolation from the node, for example in a locked down or multi-tenant cluster. There is no dedicated field for it, so set `runtimeClassName` in the driver and executor pod templates. Pod templates require Spark 3.0.0 or later.
+
+```yaml
+spec:
+  driver:
+    template:
+      spec:
+        runtimeClassName: kata-qemu
+  executor:
+    template:
+      spec:
+        runtimeClassName: kata-qemu
+```
+
+The RuntimeClass must already exist in the cluster. If `kubectl apply` fails with `unknown field "spec.driver.template"`, the installed `SparkApplication` CRD is older than v2.1.0 and needs to be updated. Note that `helm upgrade` does not update CRDs unless `hook.upgradeCrd` is enabled.
 
 ## Python Support
 
