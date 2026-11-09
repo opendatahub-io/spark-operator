@@ -118,13 +118,22 @@ print-%: ; @echo $*=$($*)
 
 CONTROLLER_GEN_PATHS := ./api/...;./cmd/...;./internal/...
 
+# Year-less boilerplate header prepended to generated manifests (controller-gen
+# emits none). The boilerplate CI check uses the templates from kubeflow/testing.
+BOILERPLATE_HEADER := hack/boilerplate/boilerplate.sh.txt
+
 .PHONY: manifests
 manifests: controller-gen ## Generate CustomResourceDefinition, RBAC and WebhookConfiguration manifests.
 	$(CONTROLLER_GEN) crd:generateEmbeddedObjectMeta=true rbac:roleName=spark-operator-controller webhook paths="$(CONTROLLER_GEN_PATHS)" output:crd:artifacts:config=config/crd/bases
+	@# controller-gen rewrites these files in full on every run, so prepending
+	@# the header here once is idempotent.
+	@for f in config/crd/bases/*.yaml config/rbac/role.yaml config/webhook/manifests.yaml; do \
+		{ cat $(BOILERPLATE_HEADER); echo; cat "$$f"; } > "$$f.tmp" && mv "$$f.tmp" "$$f"; \
+	done
 
 .PHONY: generate
 generate: controller-gen manifests ## Generate Go code and Python APIs.
-	$(CONTROLLER_GEN) object:headerFile="hack/boilerplate.go.txt" paths="$(CONTROLLER_GEN_PATHS)"
+	$(CONTROLLER_GEN) object:headerFile="hack/boilerplate/boilerplate.go.txt" paths="$(CONTROLLER_GEN_PATHS)"
 	$(MAKE) python-api
 
 .PHONY: update-crd
@@ -215,17 +224,27 @@ e2e-test: envtest kind-load-image kind-load-spark-image ## Run the e2e tests aga
 	@echo "Running e2e tests (deploy_method=$(DEPLOY_METHOD))..."
 	cd test/e2e && DEPLOY_METHOD=$(DEPLOY_METHOD) IMAGE_TAG=$(IMAGE_TAG) KUBECONFIG=$(KIND_KUBE_CONFIG) go test ./... -v -ginkgo.v -timeout 30m
 
+.PHONY: update-spark-version
+update-spark-version: ## Update managed Spark runtime references. Usage: make update-spark-version SPARK_VERSION=x.y.z
+	@if [ -z "$(SPARK_VERSION)" ]; then \
+		echo "SPARK_VERSION is required. Usage: make update-spark-version SPARK_VERSION=x.y.z"; \
+		exit 1; \
+	fi
+	./hack/update-spark-version.sh "$(SPARK_VERSION)"
+
+.PHONY: verify-spark-version
+verify-spark-version: ## Verify managed Spark runtime references are consistent.
+	./hack/verify-spark-version.sh
+
 ##@ Kustomize
 
 .PHONY: kustomize-set-image
-kustomize-set-image: ## Update config/default/kustomization.yaml image tag from VERSION file.
-  @TAG=$$(cat VERSION) && \
-  IMAGE="quay.io/opendatahub/spark-operator:v$$TAG" && \
-  sed -i.bak "s|SPARK_OPERATOR_CONTROLLER_IMAGE=.*|SPARK_OPERATOR_CONTROLLER_IMAGE=$$IMAGE|" config/default/params.env && \
-  sed -i.bak "s|SPARK_OPERATOR_WEBHOOK_IMAGE=.*|SPARK_OPERATOR_WEBHOOK_IMAGE=$$IMAGE|" config/default/params.env && \
-  rm -f config/default/params.env.bak && \
-  echo "Updated params.env image to $$IMAGE"
-
+kustomize-set-image: ## Update the Kustomize image tag (no leading "v") and public ConfigMap version from VERSION file.
+	@VERSION=$$(cat VERSION) && TAG=$${VERSION#v} && \
+	sed -i.bak "s|    newTag: .*|    newTag: $$TAG|" config/default/kustomization.yaml && \
+	sed -i.bak "s|      - kubeflow_spark_version=.*|      - kubeflow_spark_version=$$VERSION|" config/public/kustomization.yaml && \
+	rm -f config/default/kustomization.yaml.bak config/public/kustomization.yaml.bak && \
+	echo "Updated kustomize image tag to $$TAG and kubeflow_spark_version to $$VERSION"
 
 .PHONY: kustomize-lint
 kustomize-lint: ## Validate Kustomize build output (no cluster needed).
@@ -321,6 +340,23 @@ helm-unittest: helm-unittest-plugin ## Run Helm chart unittests.
 helm-lint: ## Run Helm chart lint test.
 	docker run --rm --workdir /workspace --volume "$$(pwd):/workspace" quay.io/helmpack/chart-testing:latest ct lint --target-branch master --validate-maintainers=false
 
+##@ Release
+
+.PHONY: release
+# VERSION given on the command line takes precedence over the value read from the VERSION file,
+# so `make release VERSION=vX.Y.Z` receives the new version verbatim (with the leading "v").
+release: ## Prepare a release commit. Usage: GITHUB_TOKEN=$$(gh auth token) make release VERSION=vX.Y.Z[-rc.N]
+	@hack/release/prepare-release.sh
+	$(MAKE) helm-docs
+	@echo
+	@echo "Release $(VERSION) prepared. Review the changes, then run:"
+	@echo "  git add -A && git commit -s -m 'Release $(VERSION)'"
+	@echo "and open a PR against master (latest minor) or release-X.Y (older minor patch)."
+
+.PHONY: check-release
+check-release: ## Validate that VERSION, Chart.yaml, Kustomize, Python API and CHANGELOG.md agree.
+	hack/release/check-release.sh
+
 .PHONY: helm-docs
 helm-docs: helm-docs-plugin ## Generates markdown documentation for helm charts from requirements and values files.
 	$(HELM_DOCS) --sort-values-order=file
@@ -353,7 +389,7 @@ kind-load-image: kind-create-cluster docker-build ## Load the image into the kin
 # SPARK_IMAGE is the Spark runtime image used by drivers/executors. Defaults to
 # the same tag used by examples/spark-pi.yaml so manual e2e checks line up with
 # the canonical example. Override on the command line if you need a different one.
-SPARK_IMAGE ?= docker.io/apache/spark:4.0.4@sha256:7112c0c0ca07b7d2605163ba91a05e53af39ba7cfcf9886e63141ade3f850456
+SPARK_IMAGE ?= docker.io/apache/spark:4.2.1@sha256:0cb70cf0193ec81c93c6c47078208512bbe659dd9dc89535dd2773826f0ea2bf
 
 # SPARK_IMAGE_PLATFORM is the single platform loaded into the kind cluster. The
 # nodes only ever run the host architecture, so there is nothing to gain from
@@ -363,17 +399,11 @@ SPARK_IMAGE_ARCHIVE ?= $(LOCALBIN)/spark-image.tar
 
 .PHONY: kind-load-spark-image
 kind-load-spark-image: kind-create-cluster ## Pull the Spark runtime image and load it into the kind cluster.
-	docker image inspect $(SPARK_IMAGE) >/dev/null 2>&1 || docker pull --platform $(SPARK_IMAGE_PLATFORM) $(SPARK_IMAGE)
-	@# `kind load docker-image` pipes `docker save` into `ctr images import
-	@# --all-platforms`. SPARK_IMAGE is pinned to a multi-platform digest, and
-	@# with Docker's containerd image store `docker save` exports the whole OCI
-	@# index - including the manifests for platforms that were never pulled - so
-	@# ctr fails with "content digest <other arch>: not found". Export a
-	@# single-platform archive and load that instead.
-	@mkdir -p $(LOCALBIN)
-	docker save --platform $(SPARK_IMAGE_PLATFORM) -o $(SPARK_IMAGE_ARCHIVE) $(SPARK_IMAGE)
-	$(KIND) load image-archive --name $(KIND_CLUSTER_NAME) $(SPARK_IMAGE_ARCHIVE)
-	rm -f $(SPARK_IMAGE_ARCHIVE)
+	docker image inspect $(SPARK_IMAGE) >/dev/null 2>&1 || docker pull $(SPARK_IMAGE)
+	# Docker 29 keeps only the host platform of multi-platform images, which `kind load docker-image` can't import.
+	docker save --platform $$(docker version -f '{{.Server.Os}}/{{.Server.Arch}}') -o $(LOCALBIN)/spark-image.tar $(SPARK_IMAGE)
+	$(KIND) load image-archive --name $(KIND_CLUSTER_NAME) $(LOCALBIN)/spark-image.tar
+	rm -f $(LOCALBIN)/spark-image.tar
 
 .PHONY: kind-delete-cluster
 kind-delete-cluster: kind ## Delete the created kind cluster.
