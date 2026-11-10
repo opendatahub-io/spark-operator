@@ -1,11 +1,11 @@
 /*
-Copyright 2024 The Kubeflow authors.
+Copyright 2024 The Kubeflow Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
 You may obtain a copy of the License at
 
-    https://www.apache.org/licenses/LICENSE-2.0
+    http://www.apache.org/licenses/LICENSE-2.0
 
 Unless required by applicable law or agreed to in writing, software
 distributed under the License is distributed on an "AS IS" BASIS,
@@ -328,26 +328,22 @@ func start() {
 	cfg.QPS = kubeAPIQPS
 	cfg.Burst = kubeAPIBurst
 
-	// Fetch cluster TLS security profile (OpenShift) or use hardened defaults.
-	// Denied reads and invalid profiles fail startup instead of falling back
-	// to a guessed posture.
-	mgr, tlsOptions, profileResult, err := newManagerWithTLSProfile(
-		func() (operatortls.FetchResult, error) {
-			return operatortls.FetchTLSProfile(cfg, operatorscheme.ControllerScheme)
-		},
-		func(tlsOptions []func(*tls.Config)) (ctrl.Manager, error) {
-			mgr, err := ctrl.NewManager(cfg, ctrl.Options{
-				Scheme: operatorscheme.ControllerScheme,
-				Cache:  newCacheOptions(),
-				Client: client.Options{
-					Cache: &client.CacheOptions{
-						// TODO: If Ingress reconciliation is added, move these to ByObject with a label selector.
-						// Currently write-only (created with OwnerReferences, no Watches/Owns registered).
-						DisableFor: []client.Object{
-							&networkingv1.Ingress{},
-							&extensionsv1beta1.Ingress{},
-						},
-					},
+	// Create the manager.
+	tlsOptions, err := operatortls.SetupTLS("metric", tlsMinVersion, tlsCipherSuites)
+	if err != nil {
+		logger.Error(err, "Failed to set up TLS")
+		os.Exit(1)
+	}
+	mgr, err := ctrl.NewManager(cfg, ctrl.Options{
+		Scheme: operatorscheme.ControllerScheme,
+		Cache:  newCacheOptions(),
+		Client: client.Options{
+			Cache: &client.CacheOptions{
+				// TODO: If Ingress reconciliation is added, move these to ByObject with a label selector.
+				// Currently write-only (created with OwnerReferences, no Watches/Owns registered).
+				DisableFor: []client.Object{
+					&networkingv1.Ingress{},
+					&extensionsv1beta1.Ingress{},
 				},
 				Metrics: newMetricsOptions(metricsBindAddress, secureMetrics, metricsCertDir, tlsOptions),
 				WebhookServer: ctrlwebhook.NewServer(ctrlwebhook.Options{
