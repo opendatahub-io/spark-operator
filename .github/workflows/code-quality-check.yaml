@@ -40,12 +40,24 @@ jobs:
         uses: kubeflow/testing/.github/actions/verify-boilerplate@8483606e0f8a34bf647f3b62a516efa17096c58c # master
         with:
           # Files that keep their original copyright notice (Google LLC,
-          # The Kubernetes Authors, spark-operator contributors).
+          # The Kubernetes Authors, spark-operator contributors), plus
+          # midstream-owned files that do not use the upstream boilerplate.
           exclude: |
+            ^\.codecov\.yml$
+            ^\.github/actions/kind-cluster-setup/
+            ^\.github/workflows/(_notify-on-failure|_run-kustomize-e2e|build-quay|codecov|disconnected-readiness|integration-odh|midstream-e2e|operator-chaos|pushImageToDPQuay|semgrep-tls|spark-operator-module-ci|tls-lint|upstream-sync)\.ya?ml$
+            ^\.tekton/
             ^Dockerfile$
             ^api/v1beta2/defaults\.go$
             ^api/v1beta2/defaults_test\.go$
             ^api/v1beta2/doc\.go$
+            ^chaos/
+            ^cmd/operator/controller/start_test\.go$
+            ^cmd/operator/webhook/start_test\.go$
+            ^config/component_metadata\.yaml$
+            ^config/overlays/(odh|rhoai|secure-metrics)/
+            ^config/rbac/tls-clusterrole(binding)?\.yaml$
+            ^examples/openshift/
             ^examples/spark-pi-configmap\.yaml$
             ^examples/spark-pi-custom-resource\.yaml$
             ^examples/spark-pi-emptydir\.yaml$
@@ -54,6 +66,7 @@ jobs:
             ^examples/spark-pi-scheduled\.yaml$
             ^examples/spark-pi\.yaml$
             ^hack/install_packages\.sh$
+            ^hack/create-kind-metrics-tls-secrets\.sh$
             ^hack/update-codegen\.sh$
             ^hack/verify-codegen\.sh$
             ^internal/controller/sparkapplication/driveringress\.go$
@@ -64,6 +77,7 @@ jobs:
             ^internal/controller/sparkapplication/submission_test\.go$
             ^internal/controller/sparkapplication/web_ui\.go$
             ^internal/controller/sparkapplication/web_ui_test\.go$
+            ^internal/controller/networkpolicy/
             ^internal/scheduler/registry\.go$
             ^internal/scheduler/scheduler\.go$
             ^internal/scheduler/volcano/scheduler\.go$
@@ -72,9 +86,15 @@ jobs:
             ^internal/webhook/sparkpod_defaulter_test\.go$
             ^pkg/common/doc\.go$
             ^pkg/common/spark\.go$
+            ^pkg/tls/
             ^pkg/util/capabilities\.go$
             ^pkg/util/doc\.go$
             ^pkg/util/metrics\.go$
             ^pkg/util/util\.go$
+            ^semgrep\.yaml$
+            ^spark-operator-module/
             ^spark-docker/Dockerfile$
             ^spark-docker/conf/prometheus\.yaml$
+            ^test/e2e/managedby_test\.go$
+            ^test/e2e/rhoai/
+            ^test/kustomize/
