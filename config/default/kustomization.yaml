@@ -40,10 +40,27 @@ configMapGenerator:
     envs:
       - params.env
 
-# Image configuration - tag is the VERSION file without the leading "v" (published image tags
-# carry no "v" prefix) and must equal the Helm chart appVersion. It is set by `make release`.
-# To update: make kustomize-set-image
-# CI/e2e tests override this via: kustomize edit set image ...
-images:
-  - name: ghcr.io/kubeflow/spark-operator/controller
-    newTag: 2.6.0-rc.0
+# Replace image placeholders in deployments with values from params.env.
+# ODH and RHOAI overlays replace the generated ConfigMap after ApplyParams
+# updates their environment-specific params.env files.
+replacements:
+  - source:
+      kind: ConfigMap
+      name: spark-operator-params
+      fieldPath: data.SPARK_OPERATOR_CONTROLLER_IMAGE
+    targets:
+      - select:
+          kind: Deployment
+          name: spark-operator-controller
+        fieldPaths:
+          - spec.template.spec.containers.[name=controller].image
+  - source:
+      kind: ConfigMap
+      name: spark-operator-params
+      fieldPath: data.SPARK_OPERATOR_WEBHOOK_IMAGE
+    targets:
+      - select:
+          kind: Deployment
+          name: spark-operator-webhook
+        fieldPaths:
+          - spec.template.spec.containers.[name=webhook].image

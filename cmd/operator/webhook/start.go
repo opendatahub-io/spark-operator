@@ -55,6 +55,7 @@ import (
 	"github.com/kubeflow/spark-operator/v2/pkg/certificate"
 	"github.com/kubeflow/spark-operator/v2/pkg/common"
 	operatorscheme "github.com/kubeflow/spark-operator/v2/pkg/scheme"
+	operatortls "github.com/kubeflow/spark-operator/v2/pkg/tls"
 	"github.com/kubeflow/spark-operator/v2/pkg/util"
 	"github.com/kubeflow/spark-operator/v2/pkg/version"
 	// +kubebuilder:scaffold:imports
@@ -197,46 +198,43 @@ func start() {
 	cfg.QPS = kubeAPIQPS
 	cfg.Burst = kubeAPIBurst
 
-	// Create the manager.
-	tlsOptions, err := operatortls.SetupTLS("webhook", tlsMinVersion, tlsCipherSuites)
+	// Resolve the OpenShift cluster TLS profile before creating the manager.
+	mgr, _, profileResult, err := newManagerWithTLSProfile(
+		func() (operatortls.FetchResult, error) {
+			return operatortls.FetchTLSProfile(cfg, operatorscheme.WebhookScheme)
+		},
+		func(tlsOptions []func(*tls.Config)) (ctrl.Manager, error) {
+			mgr, err := ctrl.NewManager(cfg, ctrl.Options{
+				Scheme:  operatorscheme.WebhookScheme,
+				Cache:   newCacheOptions(),
+				Client:  client.Options{},
+				Metrics: newMetricsOptions(metricsBindAddress, secureMetrics, metricsCertDir, tlsOptions),
+				WebhookServer: ctrlwebhook.NewServer(ctrlwebhook.Options{
+					Port:     webhookPort,
+					CertDir:  webhookCertDir,
+					CertName: webhookCertName,
+					KeyName:  webhookKeyName,
+					TLSOpts:  tlsOptions,
+				}),
+				HealthProbeBindAddress:  healthProbeBindAddress,
+				LeaderElection:          enableLeaderElection,
+				LeaderElectionID:        leaderElectionLockName,
+				LeaderElectionNamespace: leaderElectionLockNamespace,
+				LeaseDuration:           &leaderElectionLeaseDuration,
+				RenewDeadline:           &leaderElectionRenewDeadline,
+				RetryPeriod:             &leaderElectionRetryPeriod,
+			})
+			if err != nil {
+				logger.Error(err, "Failed to create manager")
+			}
+			return mgr, err
+		},
+	)
 	if err != nil {
 		os.Exit(1)
 	}
-	mgr, err := ctrl.NewManager(cfg, ctrl.Options{
-		Scheme: operatorscheme.WebhookScheme,
-		Cache:  newCacheOptions(),
-		Client: client.Options{},
-		Metrics: metricsserver.Options{
-			BindAddress:   metricsBindAddress,
-			SecureServing: secureMetrics,
-			TLSOpts:       tlsOptions,
-		},
-		WebhookServer: ctrlwebhook.NewServer(ctrlwebhook.Options{
-			Port:     webhookPort,
-			CertDir:  webhookCertDir,
-			CertName: webhookCertName,
-			KeyName:  webhookKeyName,
-			TLSOpts:  tlsOptions,
-		}),
-		HealthProbeBindAddress:  healthProbeBindAddress,
-		LeaderElection:          enableLeaderElection,
-		LeaderElectionID:        leaderElectionLockName,
-		LeaderElectionNamespace: leaderElectionLockNamespace,
-		LeaseDuration:           &leaderElectionLeaseDuration,
-		RenewDeadline:           &leaderElectionRenewDeadline,
-		RetryPeriod:             &leaderElectionRetryPeriod,
-		// LeaderElectionReleaseOnCancel defines if the leader should step down voluntarily
-		// when the Manager ends. This requires the binary to immediately end when the
-		// Manager is stopped, otherwise, this setting is unsafe. Setting this significantly
-		// speeds up voluntary leader transitions as the new leader don't have to wait
-		// LeaseDuration time first.
-		//
-		// In the default scaffold provided, the program ends immediately after
-		// the manager stops, so would be fine to enable this option. However,
-		// if you are doing or is intended to do any operation such as perform cleanups
-		// after the manager stops then its usage might be unsafe.
-		// LeaderElectionReleaseOnCancel: true,
-	})
+
+	ctx, err := operatortls.SetupProfileWatcherRestart(ctrl.SetupSignalHandler(), mgr, profileResult)
 	if err != nil {
 		logger.Error(err, "Failed to set up TLS security profile watcher")
 		os.Exit(1)

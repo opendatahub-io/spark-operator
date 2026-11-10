@@ -239,12 +239,14 @@ verify-spark-version: ## Verify managed Spark runtime references are consistent.
 ##@ Kustomize
 
 .PHONY: kustomize-set-image
-kustomize-set-image: ## Update the Kustomize image tag (no leading "v") and public ConfigMap version from VERSION file.
+kustomize-set-image: ## Update Kustomize image parameters and the public ConfigMap from VERSION.
 	@VERSION=$$(cat VERSION) && TAG=$${VERSION#v} && \
-	sed -i.bak "s|    newTag: .*|    newTag: $$TAG|" config/default/kustomization.yaml && \
+	IMAGE="quay.io/opendatahub/spark-operator:v$$TAG" && \
+	sed -i.bak "s|SPARK_OPERATOR_CONTROLLER_IMAGE=.*|SPARK_OPERATOR_CONTROLLER_IMAGE=$$IMAGE|" config/default/params.env && \
+	sed -i.bak "s|SPARK_OPERATOR_WEBHOOK_IMAGE=.*|SPARK_OPERATOR_WEBHOOK_IMAGE=$$IMAGE|" config/default/params.env && \
 	sed -i.bak "s|      - kubeflow_spark_version=.*|      - kubeflow_spark_version=$$VERSION|" config/public/kustomization.yaml && \
-	rm -f config/default/kustomization.yaml.bak config/public/kustomization.yaml.bak && \
-	echo "Updated kustomize image tag to $$TAG and kubeflow_spark_version to $$VERSION"
+	rm -f config/default/params.env.bak config/public/kustomization.yaml.bak && \
+	echo "Updated params.env image to $$IMAGE and kubeflow_spark_version to $$VERSION"
 
 .PHONY: kustomize-lint
 kustomize-lint: ## Validate Kustomize build output (no cluster needed).
