@@ -1,11 +1,11 @@
 /*
-Copyright 2024 The Kubeflow authors.
+Copyright 2024 The Kubeflow Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
 You may obtain a copy of the License at
 
-    https://www.apache.org/licenses/LICENSE-2.0
+    http://www.apache.org/licenses/LICENSE-2.0
 
 Unless required by applicable law or agreed to in writing, software
 distributed under the License is distributed on an "AS IS" BASIS,
@@ -328,9 +328,8 @@ func start() {
 	cfg.QPS = kubeAPIQPS
 	cfg.Burst = kubeAPIBurst
 
-	// Fetch cluster TLS security profile (OpenShift) or use hardened defaults.
-	// Denied reads and invalid profiles fail startup instead of falling back
-	// to a guessed posture.
+	// Fetch the OpenShift cluster TLS profile (or hardened defaults) before
+	// creating the manager so metrics and REST submission share one policy.
 	mgr, tlsOptions, profileResult, err := newManagerWithTLSProfile(
 		func() (operatortls.FetchResult, error) {
 			return operatortls.FetchTLSProfile(cfg, operatorscheme.ControllerScheme)
@@ -361,17 +360,6 @@ func start() {
 				LeaseDuration:           &leaderElectionLeaseDuration,
 				RenewDeadline:           &leaderElectionRenewDeadline,
 				RetryPeriod:             &leaderElectionRetryPeriod,
-				// LeaderElectionReleaseOnCancel defines if the leader should step down voluntarily
-				// when the Manager ends. This requires the binary to immediately end when the
-				// Manager is stopped, otherwise, this setting is unsafe. Setting this significantly
-				// speeds up voluntary leader transitions as the new leader don't have to wait
-				// LeaseDuration time first.
-				//
-				// In the default scaffold provided, the program ends immediately after
-				// the manager stops, so would be fine to enable this option. However,
-				// if you are doing or is intended to do any operation such as perform cleanups
-				// after the manager stops then its usage might be unsafe.
-				// LeaderElectionReleaseOnCancel: true,
 			})
 			if err != nil {
 				logger.Error(err, "failed to create manager")

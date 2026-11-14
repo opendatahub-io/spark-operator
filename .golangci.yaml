@@ -1,3 +1,17 @@
+# Copyright The Kubeflow Authors.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
 version: "2"
 
 run:
@@ -54,6 +68,10 @@ linters:
       - linters:
           - staticcheck
         text: "SA1019: .*\\.Requeue is deprecated: Use `RequeueAfter` instead."
+      # exclude staticcheck SA1019 for client deploy mode until it is removed, see #3253.
+      - linters:
+          - staticcheck
+        text: "SA1019: v1beta2.DeployModeClient is deprecated"
 
 issues:
   # Maximum issues count per one linter.

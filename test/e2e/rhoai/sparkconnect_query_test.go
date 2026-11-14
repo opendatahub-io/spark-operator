@@ -27,7 +27,6 @@ import (
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
-	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	discoveryv1 "k8s.io/api/discovery/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -39,6 +38,7 @@ import (
 
 	"github.com/kubeflow/spark-operator/v2/api/v1alpha1"
 	"github.com/kubeflow/spark-operator/v2/internal/controller/sparkconnect"
+	"github.com/kubeflow/spark-operator/v2/pkg/common"
 	"github.com/kubeflow/spark-operator/v2/pkg/util"
 )
 
@@ -152,13 +152,21 @@ var _ = Describe("SparkConnect Query", func() {
 				return false
 			}).WithPolling(PollInterval).WithTimeout(WaitTimeout).Should(BeTrue())
 
-			By("Reading the operator controller image")
-			operatorDeploy := &appsv1.Deployment{}
-			Expect(k8sClient.Get(ctx, types.NamespacedName{
-				Namespace: ReleaseNamespace,
-				Name:      "spark-operator-controller",
-			}, operatorDeploy)).To(Succeed())
-			operatorImage := operatorDeploy.Spec.Template.Spec.Containers[0].Image
+			By("Reading the Spark Connect server image")
+			serverPod := &corev1.Pod{}
+			Expect(k8sClient.Get(ctx, types.NamespacedName{Namespace: conn.Namespace, Name: serverPodName}, serverPod)).To(Succeed())
+			serverContainer := util.GetContainerByNameOrFirst(serverPod.Spec.Containers, common.SparkDriverContainerName)
+			Expect(serverContainer).NotTo(BeNil())
+			// The operator image is Python-free: the root Dockerfile builds on
+			// the Scala-only Spark base image (SPARK_IMAGE without a python3
+			// variant), which ships no python3/pip and so cannot drive the
+			// PySpark Connect client. Run the client from the server's own
+			// Spark image instead: it bundles python3 plus the PySpark
+			// distribution matching the server's Spark version, which Spark
+			// Connect requires the client and server to share. This also
+			// mirrors the documented RHOAI flow, where the client (workbench)
+			// runs its own Spark distribution rather than the operator image.
+			clientImage := serverContainer.Image
 
 			By("Creating Spark Connect client pod")
 			clientPod := &corev1.Pod{
@@ -170,8 +178,8 @@ var _ = Describe("SparkConnect Query", func() {
 					Containers: []corev1.Container{
 						{
 							Name:            "spark-connect-client",
-							Image:           operatorImage,
-							ImagePullPolicy: corev1.PullNever,
+							Image:           clientImage,
+							ImagePullPolicy: corev1.PullIfNotPresent,
 							Command:         []string{"sleep", "infinity"},
 						},
 					},
@@ -202,13 +210,13 @@ var _ = Describe("SparkConnect Query", func() {
 			// The image bundles PySpark under /opt/spark/python but not the Spark
 			// Connect client dependencies. Install them as a separate step (network
 			// bound) so the query exec gets its own, shorter budget and a hang is
-			// cleanly attributed.
+			// cleanly attributed. zstandard is required by the PySpark 4.2+
+			// Connect client (pyspark.sql.connect checks for it at import time).
 			//
 			// The install must target a writable directory: the image runs as the
-			// non-root spark user (Dockerfile.odh ends with USER), so pip cannot
-			// write to the root-owned system site-packages
-			// (/opt/app-root/lib/python3.12/...) where the build-time pyspark and
-			// AIPCC base packages live. Installing into /tmp/spark-connect-libs
+			// non-root spark user (UID 185), so pip cannot write to the root-owned
+			// system site-packages (/usr/lib/python3/dist-packages) where the
+			// image's Python packages live. Installing into /tmp/spark-connect-libs
 			// and prepending it to PYTHONPATH below also guarantees that the
 			// freshly resolved dependency versions take precedence over any
 			// conflicting packages bundled in the image (PYTHONPATH precedes
@@ -219,7 +227,7 @@ var _ = Describe("SparkConnect Query", func() {
 				"bash", "-c",
 				"export HOME=/tmp && python3 -m pip install --quiet --no-cache-dir "+
 					"--target /tmp/spark-connect-libs "+
-					"grpcio grpcio-status protobuf pandas pyarrow",
+					"grpcio grpcio-status protobuf pandas pyarrow zstandard",
 			)
 			Expect(err).NotTo(HaveOccurred(), "pip install of Spark Connect deps failed: %s", pipOutput)
 
