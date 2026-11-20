@@ -6,3 +6,8 @@
 # Default owners for everything in the repo
 # All changes will be reviewed by the Spark Operator team
 * @opendatahub-io/spark-operator
+
+# API contract checks: the baseline, the pinned workflow ref and the exclusions
+# decide what the check protects, so changes need an owner's review.
+/.github/workflows/api-contract.yml @opendatahub-io/spark-operator
+/.rhoai/ @opendatahub-io/spark-operator

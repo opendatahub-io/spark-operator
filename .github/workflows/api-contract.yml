@@ -1,0 +1,80 @@
+# Copyright The Kubeflow Authors.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+name: API contract
+
+# API contract compatibility checks for the Spark Operator CRDs
+# (sparkoperator.k8s.io, components.platform.opendatahub.io).
+#
+# Reusable workflows come from red-hat-data-services/api-contract-tests, pinned to
+# the floating release tag `latest` (v2.2.0 when this file was added). It moves with
+# every release. Read the release notes and
+# https://github.com/red-hat-data-services/api-contract-tests/blob/main/docs/releasing.md
+# before changing the pin.
+#
+# Baseline: b43103900e5fcb2f665f1f16220edc49aa116c6c, the commit of tag
+# spark-operator-2.4.0, the newest GA release (ignoring the RC pre-release
+# spark-operator-2.5.0-rc.0). Verified 2026-11-20. Moving the baseline
+# forward needs approval from someone other than the author of the change.
+
+on:
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  # CRD compatibility for the core Spark Operator CRDs
+  # (sparkoperator.k8s.io/SparkApplication,
+  #  sparkoperator.k8s.io/ScheduledSparkApplication,
+  #  sparkoperator.k8s.io/SparkConnect).
+  crd-contract-core:
+    uses: red-hat-data-services/api-contract-tests/.github/workflows/provider-crd-check.yml@latest
+    with:
+      crd-glob: config/crd/bases/*.yaml
+      baseline-refs: b43103900e5fcb2f665f1f16220edc49aa116c6c  # spark-operator-2.4.0
+      mode: enforce
+
+  # CRD compatibility for the ODH SparkOperator module CRD
+  # (components.platform.opendatahub.io/SparkOperator).
+  # This CRD was introduced after the spark-operator-2.4.0 GA release and
+  # does not exist at that baseline; the baseline is the current main HEAD
+  # at the time of onboarding.
+  crd-contract-module:
+    uses: red-hat-data-services/api-contract-tests/.github/workflows/provider-crd-check.yml@latest
+    with:
+      crd-glob: spark-operator-module/config/crd/components.platform.opendatahub.io_sparkoperators.yaml
+      baseline-refs: 1ca80c029a780e3bb153a014c7f49fd916ec3834  # main HEAD at onboarding (2026-11-20); CRD absent at spark-operator-2.4.0
+      mode: enforce
+
+  # Every OpenAPI document and CRD manifest must be a contract, a generator
+  # input, or a recorded exclusion.
+  api-contract-coverage:
+    uses: red-hat-data-services/api-contract-tests/.github/workflows/provider-coverage-check.yml@latest
+    with:
+      contract-set: .rhoai/contracts.yaml
+      baseline-refs: b43103900e5fcb2f665f1f16220edc49aa116c6c  # spark-operator-2.4.0
+      yq-version: "4.45.1"
+      crd-globs: >-
+        config/crd/bases/*.yaml
+        spark-operator-module/config/crd/components.platform.opendatahub.io_sparkoperators.yaml
+      # CRD manifests deliberately not checked:
+      # - charts/spark-operator-chart/crds/*.yaml: Helm chart copies of the
+      #   canonical CRDs in config/crd/bases/
+      # - pkg/tls/testdata/*.yaml: test fixture (mocked CRD)
+      crd-exclude-globs: >-
+        charts/spark-operator-chart/crds/*.yaml
+        pkg/tls/testdata/*.yaml
+      mode: enforce
